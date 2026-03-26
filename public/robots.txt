@@ -1,0 +1,10 @@
+# Robots.txt for Porkyrios
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: https://yourdomain.com/sitemap.xml
+
+# Disallow admin routes
+Disallow: /admin
+Disallow: /api/

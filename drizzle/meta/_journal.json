@@ -1,0 +1,90 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1763166127716,
+      "tag": "0000_eager_karma",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1763456289590,
+      "tag": "0001_sturdy_yellow_claw",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1763533527924,
+      "tag": "0002_blushing_enchantress",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1763571146822,
+      "tag": "0003_chief_mentor",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1763607344835,
+      "tag": "0004_third_randall_flagg",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1763618767506,
+      "tag": "0005_opposite_cerise",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1763654983085,
+      "tag": "0006_aromatic_sentry",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1763655860898,
+      "tag": "0007_nostalgic_johnny_storm",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1763681360741,
+      "tag": "0008_aspiring_rockslide",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1763733671348,
+      "tag": "0009_lovely_warstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1763736157290,
+      "tag": "0010_sudden_blizzard",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1763738057705,
+      "tag": "0011_mean_salo",
+      "breakpoints": true
+    }
+  ]
+}
