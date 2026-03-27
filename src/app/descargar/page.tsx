@@ -18,6 +18,7 @@ export default function DescargarPage() {
   const [canInstall, setCanInstall] = useState(false);
   const [isStandalone, setIsStandalone] = useState(false);
   const [deviceType, setDeviceType] = useState<"mobile" | "tablet" | "desktop">("mobile");
+  const [instructions, setInstructions] = useState<{ title: string; steps: string[] }>({ title: "", steps: [] });
 
   useEffect(() => {
     // Detect if already installed
@@ -26,13 +27,18 @@ export default function DescargarPage() {
 
     // Detect device type
     const width = window.innerWidth;
+    let detectedDevice: "mobile" | "tablet" | "desktop" = "mobile";
     if (width < 768) {
-      setDeviceType("mobile");
+      detectedDevice = "mobile";
     } else if (width < 1024) {
-      setDeviceType("tablet");
+      detectedDevice = "tablet";
     } else {
-      setDeviceType("desktop");
+      detectedDevice = "desktop";
     }
+    setDeviceType(detectedDevice);
+
+    // Detect instructions based on navigator (browser-only)
+    setInstructions(getInstructions(detectedDevice));
 
     // Setup PWA install prompt listener
     const handler = (e: Event) => {
@@ -78,10 +84,9 @@ export default function DescargarPage() {
     }
   };
 
-  const getInstructions = () => {
+  const getInstructions = (device: "mobile" | "tablet" | "desktop" = deviceType) => {
     const userAgent = navigator.userAgent.toLowerCase();
     const isIOS = /iphone|ipad|ipod/.test(userAgent);
-    const isSafari = /safari/.test(userAgent) && !/chrome/.test(userAgent);
     const isAndroid = /android/.test(userAgent);
 
     if (isIOS) {
@@ -110,7 +115,7 @@ export default function DescargarPage() {
       };
     }
 
-    if (deviceType === "desktop") {
+    if (device === "desktop") {
       return {
         title: "Instalación en Escritorio",
         steps: [
@@ -134,8 +139,6 @@ export default function DescargarPage() {
       ],
     };
   };
-
-  const instructions = getInstructions();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FF6B35] to-[#FF8E53]">
