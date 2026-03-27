@@ -14,6 +14,13 @@ COPY package.json package-lock.json* ./
 RUN npm ci
 
 FROM base AS builder
+
+ARG TURSO_CONNECTION_URL
+ARG TURSO_AUTH_TOKEN
+
+ENV TURSO_CONNECTION_URL=$TURSO_CONNECTION_URL
+ENV TURSO_AUTH_TOKEN=$TURSO_AUTH_TOKEN
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
