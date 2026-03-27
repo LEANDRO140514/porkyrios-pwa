@@ -127,27 +127,38 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Check for duplicate review
+    // Check for existing review (upsert: update if exists)
     const existingReview = await db.select()
       .from(reviews)
       .where(eq(reviews.userId, authenticatedUser.id))
       .limit(1);
-    
+
     if (existingReview.length > 0) {
-      return NextResponse.json({ 
-        error: 'Ya has enviado una reseña',
-        code: 'DUPLICATE_REVIEW' 
-      }, { status: 409 });
+      const updated = await db.update(reviews)
+        .set({
+          rating,
+          comment: trimmedComment,
+          status: 'pending',
+          updatedAt: new Date().toISOString(),
+        })
+        .where(eq(reviews.userId, authenticatedUser.id))
+        .returning();
+
+      return NextResponse.json({
+        message: 'Reseña actualizada. Será revisada antes de publicarse.',
+        review: updated[0],
+        updated: true,
+      }, { status: 200 });
     }
-    
+
     // Get IP address and User-Agent
     const ipAddress = getIpAddress(request);
     const userAgent = request.headers.get('user-agent') || null;
-    
-    // Check for rate limiting (5 minutes cooldown)
+
+    // Check for rate limiting (5 minutes cooldown) — only for new reviews
     if (ipAddress) {
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-      
+
       const recentReviews = await db.select()
         .from(reviews)
         .where(
@@ -157,15 +168,15 @@ export async function POST(request: NextRequest) {
           )
         )
         .limit(1);
-      
+
       if (recentReviews.length > 0) {
-        return NextResponse.json({ 
+        return NextResponse.json({
           error: 'Espera 5 minutos antes de enviar otra reseña',
-          code: 'RATE_LIMIT_EXCEEDED' 
+          code: 'RATE_LIMIT_EXCEEDED'
         }, { status: 429 });
       }
     }
-    
+
     // Check for verified purchase
     const completedOrders = await db.select()
       .from(orders)
@@ -176,10 +187,10 @@ export async function POST(request: NextRequest) {
         )
       )
       .limit(1);
-    
+
     const isVerifiedPurchase = completedOrders.length > 0;
-    
-    // Insert review
+
+    // Insert new review
     const newReview = await db.insert(reviews)
       .values({
         userId: authenticatedUser.id,
@@ -194,10 +205,11 @@ export async function POST(request: NextRequest) {
         updatedAt: new Date().toISOString(),
       })
       .returning();
-    
-    return NextResponse.json({ 
+
+    return NextResponse.json({
       message: 'Reseña enviada. Será revisada antes de publicarse.',
-      review: newReview[0]
+      review: newReview[0],
+      updated: false,
     }, { status: 201 });
     
   } catch (error) {

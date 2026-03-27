@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,9 +26,36 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
   const [hoveredRating, setHoveredRating] = useState(0);
   const [comment, setComment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [existingStatus, setExistingStatus] = useState<string | null>(null);
+
+  // Load existing review when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    const token = localStorage.getItem("bearer_token");
+    if (!token) return;
+
+    fetch("/api/reviews/my-review", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (data?.review) {
+          setRating(data.review.rating);
+          setComment(data.review.comment);
+          setIsEditing(true);
+          setExistingStatus(data.review.status);
+        } else {
+          setRating(0);
+          setComment("");
+          setIsEditing(false);
+          setExistingStatus(null);
+        }
+      })
+      .catch(() => {});
+  }, [open]);
 
   const handleSubmit = async () => {
-    // Validación
     if (rating === 0) {
       toast.error("Por favor selecciona una calificación");
       return;
@@ -48,7 +75,7 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
 
     try {
       const token = localStorage.getItem("bearer_token");
-      
+
       if (!token) {
         toast.error("Debes iniciar sesión para dejar una reseña");
         router.push("/login?redirect=/");
@@ -61,19 +88,13 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({
-          rating,
-          comment: comment.trim(),
-        }),
+        body: JSON.stringify({ rating, comment: comment.trim() }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        // Manejo de errores específicos
-        if (data.code === "DUPLICATE_REVIEW") {
-          toast.error("Ya has enviado una reseña anteriormente");
-        } else if (data.code === "PROFANITY_DETECTED") {
+        if (data.code === "PROFANITY_DETECTED") {
           toast.error("Tu comentario contiene palabras inapropiadas");
         } else if (data.code === "RATE_LIMIT_EXCEEDED") {
           toast.error("Espera 5 minutos antes de enviar otra reseña");
@@ -86,20 +107,13 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
         return;
       }
 
-      // Éxito
-      toast.success("¡Reseña enviada! Será revisada antes de publicarse", {
-        description: "Gracias por compartir tu experiencia",
-      });
+      toast.success(
+        data.updated ? "¡Reseña actualizada! Será revisada antes de publicarse" : "¡Reseña enviada! Será revisada antes de publicarse",
+        { description: "Gracias por compartir tu experiencia" }
+      );
 
-      // Limpiar formulario
-      setRating(0);
-      setComment("");
       onOpenChange(false);
-
-      // Callback de éxito
-      if (onSuccess) {
-        onSuccess();
-      }
+      if (onSuccess) onSuccess();
     } catch (error) {
       console.error("Error submitting review:", error);
       toast.error("Error al enviar la reseña. Intenta de nuevo");
@@ -108,13 +122,23 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
     }
   };
 
+  const statusLabel: Record<string, string> = {
+    pending: "en revisión",
+    approved: "publicada ✅",
+    rejected: "rechazada ❌",
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>⭐ Comparte tu Experiencia</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "✏️ Editar tu Reseña" : "⭐ Comparte tu Experiencia"}
+          </DialogTitle>
           <DialogDescription>
-            Tu opinión nos ayuda a mejorar y a otros clientes a elegir
+            {isEditing
+              ? `Tu reseña actual está ${existingStatus ? statusLabel[existingStatus] ?? existingStatus : "guardada"}. Puedes modificarla.`
+              : "Tu opinión nos ayuda a mejorar y a otros clientes a elegir"}
           </DialogDescription>
         </DialogHeader>
 
@@ -178,8 +202,10 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
           {/* Info */}
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
             <p className="text-sm text-blue-800">
-              <strong>📋 Nota:</strong> Tu reseña será revisada por nuestro equipo antes de
-              publicarse para garantizar la calidad y autenticidad de las opiniones.
+              <strong>📋 Nota:</strong>{" "}
+              {isEditing
+                ? "Al guardar, tu reseña volverá a revisión antes de publicarse."
+                : "Tu reseña será revisada por nuestro equipo antes de publicarse."}
             </p>
           </div>
         </div>
@@ -198,7 +224,11 @@ export const ReviewDialog = ({ open, onOpenChange, onSuccess }: ReviewDialogProp
             disabled={isSubmitting || rating === 0 || comment.trim().length < 10}
             className="bg-[#FF6B35] hover:bg-[#FF6B35]/90"
           >
-            {isSubmitting ? "Enviando..." : "Enviar Reseña"}
+            {isSubmitting
+              ? "Guardando..."
+              : isEditing
+              ? "Actualizar Reseña"
+              : "Enviar Reseña"}
           </Button>
         </div>
       </DialogContent>
