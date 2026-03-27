@@ -88,6 +88,7 @@ export default function Home() {
   // Referral dialog state
   const [referralDialogOpen, setReferralDialogOpen] = useState(false);
   const [originUrl, setOriginUrl] = useState("");
+  const [userReferralCode, setUserReferralCode] = useState<string | null>(null);
 
   const konamiCode = [
     "ArrowUp",
@@ -204,6 +205,22 @@ export default function Home() {
       window.removeEventListener("beforeinstallprompt", handler);
     };
   }, []);
+
+  // Fetch referral code when user is logged in
+  useEffect(() => {
+    if (!session?.user) {
+      setUserReferralCode(null);
+      return;
+    }
+    const token = localStorage.getItem("bearer_token");
+    if (!token) return;
+    fetch("/api/referrals/my-code", {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data?.referralCode) setUserReferralCode(data.referralCode); })
+      .catch(() => {});
+  }, [session?.user?.id]);
 
   // Handle logout
   const handleSignOut = async () => {
@@ -634,9 +651,9 @@ export default function Home() {
             </p>
             <div className="flex justify-center">
               <ShareButtons
-                  url={originUrl}
+                url={userReferralCode ? `${originUrl}?ref=${userReferralCode}` : originUrl}
                 title="Porkyrios - El Verdadero Lujo Está en el Sabor"
-                description="¡Descubre los mejores platillos con entrega rápida en 30-35 minutos! 🍽️"
+                description={userReferralCode ? `¡Usa mi código ${userReferralCode} y obtén 10% de descuento en tu primer pedido! 🍽️` : "¡Descubre los mejores platillos con entrega rápida en 30-35 minutos! 🍽️"}
                 hashtags={["Porkyrios", "ComidaDeliciosa", "EntregaRápida"]}
               />
             </div>
