@@ -42,10 +42,16 @@ import {
   ThumbsUp,
   ThumbsDown,
   Flag,
-  Megaphone
+  Megaphone,
+  Plug2,
+  CheckCircle2,
+  AlertCircle,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
 import { notifyOrderStatusChange } from "@/lib/notifications";
+import { optimizeImage } from "@/lib/image-optimizer";
 import { Textarea } from "@/components/ui/textarea";
 import {
   LineChart,
@@ -64,9 +70,11 @@ type Category = {
   id: number;
   name: string;
   emoji: string;
+  image: string | null;
+  imagePublicId: string | null;
+  imageSize: number | null;
   active: boolean;
   createdAt: string;
-  image: string | null;
 };
 
 type Product = {
@@ -77,6 +85,8 @@ type Product = {
   categoryId: number | null;
   stock: number;
   image: string | null;
+  imagePublicId: string | null;
+  imageSize: number | null;
   active: boolean;
   featured: boolean;
   createdAt: string;
@@ -237,9 +247,19 @@ export default function AdminPanel() {
   });
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "categories" | "products" | "orders" | "coupons" | "inventory" | "postal-codes" | "reviews" | "promotions">("dashboard");
+  const [activeTab, setActiveTab] = useState<"dashboard" | "categories" | "products" | "orders" | "coupons" | "inventory" | "postal-codes" | "reviews" | "promotions" | "integrations">("dashboard");
+
+  // GHL Integration state
+  const [ghlEnabled, setGhlEnabled] = useState(false);
+  const [ghlApiKey, setGhlApiKey] = useState("");
+  const [ghlLocationId, setGhlLocationId] = useState("");
+  const [ghlTestStatus, setGhlTestStatus] = useState<"idle" | "testing" | "success" | "error">("idle");
+  const [ghlTestMessage, setGhlTestMessage] = useState("");
+  const [isSavingGHL, setIsSavingGHL] = useState(false);
+  const [hasLoadedGHL, setHasLoadedGHL] = useState(false);
 
   // Analytics state
   const [salesPeriod, setSalesPeriod] = useState<"today" | "week" | "month" | "year">("week");
@@ -258,7 +278,12 @@ export default function AdminPanel() {
     name: "",
     emoji: "",
     image: "",
+    imagePublicId: "",
+    imageSize: 0,
   });
+
+  // Storage monitor state
+  const [storageStats, setStorageStats] = useState<{ usedMB: number; limitMB: number; percentUsed: number } | null>(null);
   
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
@@ -315,6 +340,8 @@ export default function AdminPanel() {
     categoryId: "",
     stock: "",
     image: "",
+    imagePublicId: "",
+    imageSize: 0,
   });
 
   // Coupons form state
@@ -393,6 +420,8 @@ export default function AdminPanel() {
       } else if (activeTab === "promotions" && !hasLoadedPromotions) {
         fetchPromotions();
         if (!hasLoadedProducts) fetchProducts();
+      } else if (activeTab === "integrations" && !hasLoadedGHL) {
+        fetchGHLSettings();
       }
     }
   }, [isAuthenticated, activeTab]);
@@ -431,6 +460,7 @@ export default function AdminPanel() {
         fetchTopProducts(),
         fetchRevenueStats(),
         fetchOverviewStats(),
+        fetchStorageStats(),
       ]);
       setHasLoadedAnalytics(true);
     } catch (error) {
@@ -819,6 +849,78 @@ export default function AdminPanel() {
     }
   };
 
+  // ─── GHL Functions ────────────────────────────────────────────
+  const fetchGHLSettings = async () => {
+    try {
+      const res = await fetch("/api/ghl/settings");
+      if (res.ok) {
+        const data = await res.json();
+        setGhlEnabled(data.enabled);
+        setGhlApiKey(data.apiKey);
+        setGhlLocationId(data.locationId);
+      }
+      setHasLoadedGHL(true);
+    } catch (error) {
+      console.error("Error loading GHL settings:", error);
+      setHasLoadedGHL(true);
+    }
+  };
+
+  const saveGHLSettings = async () => {
+    setIsSavingGHL(true);
+    try {
+      const res = await fetch("/api/ghl/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: ghlEnabled,
+          apiKey: ghlApiKey,
+          locationId: ghlLocationId,
+        }),
+      });
+      if (res.ok) {
+        toast.success("Configuración GHL guardada");
+      } else {
+        toast.error("Error al guardar configuración GHL");
+      }
+    } catch {
+      toast.error("Error de conexión al guardar GHL");
+    } finally {
+      setIsSavingGHL(false);
+    }
+  };
+
+  const testGHLConnectionHandler = async () => {
+    if (!ghlApiKey.trim() || !ghlLocationId.trim()) {
+      toast.error("Ingresa el API Key y Location ID antes de probar");
+      return;
+    }
+    setGhlTestStatus("testing");
+    setGhlTestMessage("");
+    try {
+      const res = await fetch("/api/ghl/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: ghlApiKey, locationId: ghlLocationId }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setGhlTestStatus("success");
+        setGhlTestMessage(`✅ Conectado a: ${data.locationName}`);
+        toast.success(`Conexión exitosa con GHL: ${data.locationName}`);
+      } else {
+        setGhlTestStatus("error");
+        setGhlTestMessage(data.error || "Conexión fallida");
+        toast.error(data.error || "No se pudo conectar a GHL");
+      }
+    } catch {
+      setGhlTestStatus("error");
+      setGhlTestMessage("Error de red al conectar con GHL");
+      toast.error("Error de red al conectar con GHL");
+    }
+  };
+  // ──────────────────────────────────────────────────────────────
+
   const handleInventoryAdjustment = async () => {
     if (!adjustmentForm.productId) {
       toast.error("Selecciona un producto");
@@ -963,33 +1065,49 @@ export default function AdminPanel() {
   const handleImageUpload = async (
     file: File,
     setUploading: (loading: boolean) => void,
-    onSuccess: (url: string) => void
+    onSuccess: (url: string, publicId?: string, size?: number) => void,
+    oldPublicId?: string | null
   ) => {
     if (!file) return;
 
-    // Validate file type
     const validTypes = ["image/jpeg", "image/jpg", "image/png", "image/gif", "image/webp"];
     if (!validTypes.includes(file.type)) {
       toast.error("❌ Solo se permiten imágenes (JPEG, PNG, GIF, WebP)");
       return;
     }
 
-    // Validate file size (5MB)
-    const maxSize = 5 * 1024 * 1024;
+    const maxSize = 10 * 1024 * 1024; // 10MB before optimization
     if (file.size > maxSize) {
-      toast.error("❌ La imagen es muy grande. Máximo 5MB");
+      toast.error("❌ La imagen es muy grande. Máximo 10MB");
       return;
     }
 
     setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
 
     try {
-      const response = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
+      // Step 1: Client-side optimization → WebP, max 800px, quality 0.8
+      toast.info("⚙️ Optimizando imagen...", { duration: 1500 });
+      const { blob: optimizedBlob, size } = await optimizeImage(file);
+
+      // Step 2: Delete old image file if replacing
+      if (oldPublicId) {
+        try {
+          await fetch(`/api/upload?publicId=${encodeURIComponent(oldPublicId)}`, { method: "DELETE" });
+        } catch (e) {
+          console.error("Failed to delete old image:", e);
+        }
+      }
+
+      // Step 3: Upload optimized WebP
+      const optimizedFile = new File(
+        [optimizedBlob],
+        file.name.replace(/\.[^.]+$/, ".webp"),
+        { type: "image/webp" }
+      );
+      const formData = new FormData();
+      formData.append("file", optimizedFile);
+
+      const response = await fetch("/api/upload", { method: "POST", body: formData });
 
       if (!response.ok) {
         const error = await response.json();
@@ -997,13 +1115,53 @@ export default function AdminPanel() {
       }
 
       const data = await response.json();
-      onSuccess(data.url);
-      toast.success("✅ Imagen cargada correctamente");
+      onSuccess(data.url, data.publicId, size);
+      toast.success(`✅ Imagen optimizada y subida (${(size / 1024).toFixed(0)} KB)`);
     } catch (error) {
       console.error("Error uploading image:", error);
-      toast.error("❌ Error al cargar la imagen");
+      toast.error("❌ Error al procesar la imagen");
     } finally {
       setUploading(false);
+    }
+  };
+
+  // Delete an uploaded image file and clear the field in the record
+  const handleDeleteImage = async (
+    publicId: string,
+    clearState: () => void,
+    entityType?: "product" | "category",
+    entityId?: number
+  ) => {
+    try {
+      await fetch(`/api/upload?publicId=${encodeURIComponent(publicId)}`, { method: "DELETE" });
+
+      if (entityType && entityId) {
+        const endpoint = entityType === "product" ? `/api/products?id=${entityId}` : `/api/categories?id=${entityId}`;
+        await fetch(endpoint, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: null, imagePublicId: null, imageSize: null }),
+        });
+      }
+
+      clearState();
+      toast.success("🗑️ Imagen eliminada");
+    } catch (error) {
+      console.error("Error deleting image:", error);
+      toast.error("❌ Error al eliminar la imagen");
+    }
+  };
+
+  // Fetch storage stats
+  const fetchStorageStats = async () => {
+    try {
+      const res = await fetch("/api/storage");
+      if (res.ok) {
+        const data = await res.json();
+        setStorageStats(data);
+      }
+    } catch (e) {
+      console.error("Error fetching storage stats:", e);
     }
   };
 
@@ -1031,6 +1189,8 @@ export default function AdminPanel() {
           name: newCategory.name,
           emoji: newCategory.emoji,
           image: newCategory.image || null,
+          imagePublicId: newCategory.imagePublicId || null,
+          imageSize: newCategory.imageSize || null,
           active: true,
         }),
       });
@@ -1042,7 +1202,7 @@ export default function AdminPanel() {
 
       const newCat = await response.json();
       setCategories([...categories, newCat]);
-      setNewCategory({ name: "", emoji: "", image: "" });
+      setNewCategory({ name: "", emoji: "", image: "", imagePublicId: "", imageSize: 0 });
       toast.success(`✅ Categoría "${newCat.name}" agregada correctamente`);
     } catch (error) {
       console.error("Error creating category:", error);
@@ -1124,6 +1284,8 @@ export default function AdminPanel() {
           categoryId: newProduct.categoryId ? parseInt(newProduct.categoryId) : null,
           stock: newProduct.stock ? parseInt(newProduct.stock) : 0,
           image: newProduct.image || null,
+          imagePublicId: newProduct.imagePublicId || null,
+          imageSize: newProduct.imageSize || null,
           active: true,
         }),
       });
@@ -1142,6 +1304,8 @@ export default function AdminPanel() {
         categoryId: "",
         stock: "",
         image: "",
+        imagePublicId: "",
+        imageSize: 0,
       });
       toast.success(`✅ Producto "${product.name}" agregado correctamente`);
     } catch (error) {
@@ -1177,6 +1341,8 @@ export default function AdminPanel() {
           categoryId: editingProduct.categoryId,
           stock: editingProduct.stock,
           image: editingProduct.image || null,
+          imagePublicId: editingProduct.imagePublicId || null,
+          imageSize: editingProduct.imageSize || null,
           active: editingProduct.active,
         }),
       });
@@ -1794,15 +1960,23 @@ export default function AdminPanel() {
             </div>
 
             <form onSubmit={handleLogin} className="space-y-3 md:space-y-4">
-              <div>
+              <div className="relative">
                 <Input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   placeholder="Ingresa la contraseña secreta"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 text-center text-base md:text-lg h-11 md:h-12"
+                  className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 text-center text-base md:text-lg h-11 md:h-12 pr-10"
                   autoFocus
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
               </div>
 
               {error && (
@@ -1962,6 +2136,14 @@ export default function AdminPanel() {
                   {reviewStats.pending}
                 </span>
               )}
+            </Button>
+            <Button
+              variant={activeTab === "integrations" ? "default" : "ghost"}
+              className={`flex-shrink-0 text-xs md:text-sm h-8 md:h-10 px-2 md:px-3 ${activeTab === "integrations" ? "bg-[#FF6B35] hover:bg-[#FF8E53]" : "text-gray-400 hover:text-white"}`}
+              onClick={() => setActiveTab("integrations")}
+            >
+              <Plug2 className="w-3 h-3 md:w-4 md:h-4 md:mr-2" />
+              <span className="hidden sm:inline">Integraciones</span>
             </Button>
           </div>
         </div>
@@ -2284,6 +2466,36 @@ export default function AdminPanel() {
               )}
             </Card>
 
+            {/* Storage Monitor */}
+            {storageStats && (
+              <Card className="bg-gray-800 border-gray-700 p-4 md:p-6 mb-6 md:mb-8">
+                <div className="flex items-center justify-between mb-3">
+                  <h2 className="text-base md:text-lg font-bold text-white flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 md:w-5 md:h-5 text-[#FF6B35]" />
+                    Almacenamiento de Imágenes
+                  </h2>
+                  <span className="text-sm text-gray-400">
+                    {storageStats.usedMB.toFixed(2)} MB / {storageStats.limitMB} MB
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-3 overflow-hidden">
+                  <div
+                    className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(storageStats.percentUsed, 100)}%`,
+                      backgroundColor: storageStats.percentUsed > 80 ? "#EF4444" : storageStats.percentUsed > 60 ? "#F59E0B" : "#FF6B35",
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  {storageStats.percentUsed.toFixed(1)}% utilizado
+                  {storageStats.percentUsed > 80 && (
+                    <span className="text-red-400 ml-2">⚠️ Límite próximo — considera eliminar imágenes no usadas</span>
+                  )}
+                </p>
+              </Card>
+            )}
+
             {/* Recent Orders */}
             <Card className="bg-gray-800 border-gray-700 p-6">
               <div className="flex items-center justify-between mb-6">
@@ -2561,9 +2773,14 @@ export default function AdminPanel() {
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) {
-                            handleImageUpload(file, setUploadingCategoryImage, (url) => {
-                              setNewCategory({ ...newCategory, image: url });
-                            });
+                            handleImageUpload(
+                              file,
+                              setUploadingCategoryImage,
+                              (url, publicId, size) => {
+                                setNewCategory({ ...newCategory, image: url, imagePublicId: publicId ?? "", imageSize: size ?? 0 });
+                              },
+                              newCategory.imagePublicId || null
+                            );
                           }
                         }}
                       />
@@ -2661,13 +2878,31 @@ export default function AdminPanel() {
                           </div>
 
                           <div className="flex items-center gap-2">
+                            {category.imagePublicId && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                title="Eliminar imagen"
+                                onClick={() => handleDeleteImage(
+                                  category.imagePublicId!,
+                                  () => setCategories(categories.map(c => c.id === category.id ? { ...c, image: null, imagePublicId: null, imageSize: null } : c)),
+                                  "category",
+                                  category.id
+                                )}
+                                className="border-gray-600 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                              >
+                                <ImageIcon className="w-3 h-3 mr-1" />
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            )}
+
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handleToggleCategory(category.id)}
                               className={`border-gray-600 ${
-                                category.active 
-                                  ? "text-orange-400 hover:bg-orange-500/20" 
+                                category.active
+                                  ? "text-orange-400 hover:bg-orange-500/20"
                                   : "text-green-400 hover:bg-green-500/20"
                               }`}
                             >
@@ -2790,9 +3025,14 @@ export default function AdminPanel() {
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) {
-                          handleImageUpload(file, setUploadingProductImage, (url) => {
-                            setNewProduct({ ...newProduct, image: url });
-                          });
+                          handleImageUpload(
+                            file,
+                            setUploadingProductImage,
+                            (url, publicId, size) => {
+                              setNewProduct({ ...newProduct, image: url, imagePublicId: publicId ?? "", imageSize: size ?? 0 });
+                            },
+                            newProduct.imagePublicId || null
+                          );
                         }
                       }}
                     />
@@ -2965,9 +3205,14 @@ export default function AdminPanel() {
                                   onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (file) {
-                                      handleImageUpload(file, setUploadingEditImage, (url) => {
-                                        setEditingProduct({ ...editingProduct, image: url });
-                                      });
+                                      handleImageUpload(
+                                        file,
+                                        setUploadingEditImage,
+                                        (url, publicId, size) => {
+                                          setEditingProduct({ ...editingProduct, image: url, imagePublicId: publicId ?? editingProduct.imagePublicId, imageSize: size ?? editingProduct.imageSize });
+                                        },
+                                        editingProduct.imagePublicId || null
+                                      );
                                     }
                                   }}
                                 />
@@ -3083,6 +3328,24 @@ export default function AdminPanel() {
                                 <Star className={`w-4 h-4 ${product.featured ? "fill-orange-400" : ""}`} />
                               </Button>
 
+                              {product.imagePublicId && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  title="Eliminar imagen"
+                                  onClick={() => handleDeleteImage(
+                                    product.imagePublicId!,
+                                    () => setProducts(products.map(p => p.id === product.id ? { ...p, image: null, imagePublicId: null, imageSize: null } : p)),
+                                    "product",
+                                    product.id
+                                  )}
+                                  className="border-gray-600 text-gray-400 hover:text-red-400 hover:bg-red-500/10"
+                                >
+                                  <ImageIcon className="w-3 h-3 mr-1" />
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              )}
+
                               <Button
                                 variant="outline"
                                 size="sm"
@@ -3097,8 +3360,8 @@ export default function AdminPanel() {
                                 size="sm"
                                 onClick={() => handleToggleProduct(product.id)}
                                 className={`border-gray-600 ${
-                                  product.active 
-                                    ? "text-orange-400 hover:bg-orange-500/20" 
+                                  product.active
+                                    ? "text-orange-400 hover:bg-orange-500/20"
                                     : "text-green-400 hover:bg-green-500/20"
                                 }`}
                               >
@@ -4543,6 +4806,158 @@ export default function AdminPanel() {
             </Card>
           </div>
         )}
+        {/* ─── INTEGRACIONES TAB ─────────────────────────────────────── */}
+        {activeTab === "integrations" && (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-xl md:text-2xl font-bold text-white mb-1">Integraciones</h2>
+              <p className="text-gray-400 text-sm">Conecta Porkyrios con plataformas externas de CRM y marketing.</p>
+            </div>
+
+            {/* GHL Card */}
+            <Card className="bg-gray-800 border-gray-700 p-4 md:p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-[#FF6B35]/20 flex items-center justify-center flex-shrink-0">
+                    <Plug2 className="w-5 h-5 text-[#FF6B35]" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold text-base md:text-lg">GoHighLevel (GHL)</h3>
+                    <p className="text-gray-400 text-xs md:text-sm">CRM y automatización de marketing</p>
+                  </div>
+                </div>
+                {/* Enable toggle */}
+                <button
+                  type="button"
+                  onClick={() => setGhlEnabled(!ghlEnabled)}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${ghlEnabled ? "bg-[#FF6B35]" : "bg-gray-600"}`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${ghlEnabled ? "translate-x-6" : "translate-x-1"}`}
+                  />
+                </button>
+              </div>
+
+              <p className="text-gray-300 text-sm mb-4 leading-relaxed">
+                Cuando se crea un nuevo pedido, el cliente se agrega automáticamente como contacto en tu subcuenta de GHL.
+                Si el contacto ya existe, se le añade una nota con los detalles del pedido.
+              </p>
+
+              {/* Info boxes */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
+                <div className="bg-gray-700/50 rounded-lg p-3 text-center">
+                  <p className="text-[#FF6B35] font-bold text-sm">Crea Contacto</p>
+                  <p className="text-gray-400 text-xs mt-1">Nuevo cliente → contacto en GHL automáticamente</p>
+                </div>
+                <div className="bg-gray-700/50 rounded-lg p-3 text-center">
+                  <p className="text-[#FF6B35] font-bold text-sm">Agrega Nota</p>
+                  <p className="text-gray-400 text-xs mt-1">Cada pedido queda registrado como nota en el contacto</p>
+                </div>
+                <div className="bg-gray-700/50 rounded-lg p-3 text-center">
+                  <p className="text-[#FF6B35] font-bold text-sm">Non-blocking</p>
+                  <p className="text-gray-400 text-xs mt-1">Si GHL falla, el pedido se crea igual sin errores</p>
+                </div>
+              </div>
+
+              {/* Credentials form */}
+              <div className={`space-y-4 transition-opacity ${ghlEnabled ? "opacity-100" : "opacity-50 pointer-events-none"}`}>
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-1">
+                    API Key de la Subcuenta (Location)
+                  </label>
+                  <Input
+                    type="password"
+                    placeholder="eyJhbGciOi..."
+                    value={ghlApiKey}
+                    onChange={(e) => {
+                      setGhlApiKey(e.target.value);
+                      setGhlTestStatus("idle");
+                    }}
+                    className="bg-gray-700 border-gray-600 text-white placeholder-gray-500"
+                  />
+                  <p className="text-gray-500 text-xs mt-1">
+                    GHL → Settings → Integrations → API Keys → Location API Key
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-gray-300 text-sm font-medium mb-1">
+                    Location ID (ID de la Subcuenta)
+                  </label>
+                  <Input
+                    type="text"
+                    placeholder="abc123xyz..."
+                    value={ghlLocationId}
+                    onChange={(e) => {
+                      setGhlLocationId(e.target.value);
+                      setGhlTestStatus("idle");
+                    }}
+                    className="bg-gray-700 border-gray-600 text-white placeholder-gray-500"
+                  />
+                  <p className="text-gray-500 text-xs mt-1">
+                    GHL → Settings → Business Info → Location ID
+                  </p>
+                </div>
+
+                {/* Test connection result */}
+                {ghlTestStatus !== "idle" && ghlTestMessage && (
+                  <div className={`flex items-center gap-2 p-3 rounded-lg text-sm ${
+                    ghlTestStatus === "success"
+                      ? "bg-green-900/30 border border-green-700 text-green-300"
+                      : ghlTestStatus === "error"
+                      ? "bg-red-900/30 border border-red-700 text-red-300"
+                      : "bg-gray-700 text-gray-300"
+                  }`}>
+                    {ghlTestStatus === "success" && <CheckCircle2 className="w-4 h-4 flex-shrink-0" />}
+                    {ghlTestStatus === "error" && <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+                    {ghlTestStatus === "testing" && <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />}
+                    {ghlTestMessage}
+                  </div>
+                )}
+
+                <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    className="border-gray-600 text-gray-300 hover:bg-gray-700 flex-1"
+                    onClick={testGHLConnectionHandler}
+                    disabled={ghlTestStatus === "testing" || !ghlApiKey || !ghlLocationId}
+                  >
+                    {ghlTestStatus === "testing" ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Probando...</>
+                    ) : (
+                      <><Plug2 className="w-4 h-4 mr-2" /> Probar Conexión</>
+                    )}
+                  </Button>
+                  <Button
+                    className="bg-[#FF6B35] hover:bg-[#FF8E53] text-white flex-1"
+                    onClick={saveGHLSettings}
+                    disabled={isSavingGHL}
+                  >
+                    {isSavingGHL ? (
+                      <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Guardando...</>
+                    ) : (
+                      <><Save className="w-4 h-4 mr-2" /> Guardar Configuración</>
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {!ghlEnabled && (
+                <p className="text-center text-gray-500 text-sm mt-4 italic">
+                  Activa la integración con el toggle para configurar las credenciales.
+                </p>
+              )}
+            </Card>
+
+            {/* More integrations placeholder */}
+            <Card className="bg-gray-800/50 border-gray-700 border-dashed p-6 text-center">
+              <Plug2 className="w-8 h-8 text-gray-600 mx-auto mb-2" />
+              <p className="text-gray-500 text-sm">Próximamente más integraciones: Google Analytics, WhatsApp Business, etc.</p>
+            </Card>
+          </div>
+        )}
+        {/* ─────────────────────────────────────────────────────────── */}
+
       </div>
     </div>
   );

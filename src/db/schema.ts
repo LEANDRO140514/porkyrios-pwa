@@ -7,8 +7,11 @@ export const categories = sqliteTable('categories', {
   name: text('name').notNull(),
   emoji: text('emoji').notNull(),
   image: text('image'),
+  imagePublicId: text('image_public_id'),
+  imageSize: integer('image_size'),
   active: integer('active', { mode: 'boolean' }).default(true),
   createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at'),
 });
 
 export const products = sqliteTable('products', {
@@ -19,9 +22,12 @@ export const products = sqliteTable('products', {
   categoryId: integer('category_id').references(() => categories.id),
   stock: integer('stock').default(0),
   image: text('image'),
+  imagePublicId: text('image_public_id'),
+  imageSize: integer('image_size'),
   active: integer('active', { mode: 'boolean' }).default(true),
   featured: integer('featured', { mode: 'boolean' }).default(false),
   createdAt: text('created_at').notNull(),
+  updatedAt: text('updated_at'),
 });
 
 export const orders = sqliteTable('orders', {

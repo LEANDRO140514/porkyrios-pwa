@@ -142,8 +142,13 @@ export default function TrackingPage() {
   const searchParams = useSearchParams();
   const { data: session, isPending } = useSession();
   const orderParam = searchParams.get("order");
+  // MercadoPago sends back these params after payment
+  const externalRef = searchParams.get("external_reference");
+  const mpStatus = searchParams.get("collection_status") || searchParams.get("status");
 
-  const [searchQuery, setSearchQuery] = useState(orderParam || "");
+  const effectiveOrderParam = orderParam || externalRef;
+
+  const [searchQuery, setSearchQuery] = useState(effectiveOrderParam || "");
   const [order, setOrder] = useState<Order | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -253,12 +258,25 @@ export default function TrackingPage() {
     }
   }, [session, isPending, router]);
 
-  // Auto-search if order param is present
+  // Show payment status toast when returning from MercadoPago
   useEffect(() => {
-    if (orderParam && !hasSearched) {
-      handleSearch(orderParam);
+    if (!mpStatus) return;
+    if (mpStatus === "approved") {
+      toast.success("¡Pago aprobado! Tu pedido está confirmado.");
+    } else if (mpStatus === "pending" || mpStatus === "in_process") {
+      toast.info("Pago en proceso. Te notificaremos cuando se confirme.");
+    } else if (mpStatus === "rejected" || mpStatus === "failure") {
+      toast.error("El pago fue rechazado. Intenta con otro método de pago.");
     }
-  }, [orderParam, handleSearch, hasSearched]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Auto-search if order param or external_reference from MP is present
+  useEffect(() => {
+    if (effectiveOrderParam && !hasSearched) {
+      handleSearch(effectiveOrderParam);
+    }
+  }, [effectiveOrderParam, handleSearch, hasSearched]);
 
   // Real-time polling for order updates (every 10 seconds)
   useEffect(() => {

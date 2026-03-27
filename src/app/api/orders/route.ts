@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
-import { orders } from '@/db/schema';
-import { eq, and, desc } from 'drizzle-orm';
+import { orders, settings } from '@/db/schema';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import * as Sentry from '@sentry/nextjs';
+import { syncOrderToGHL } from '@/lib/ghl';
 
 const VALID_STATUSES = ['pending_payment', 'preparing', 'cooking', 'packing', 'ready', 'completed', 'cancelled'];
 
@@ -181,10 +182,35 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
+    // ── GHL sync (non-blocking) ──────────────────────────────────
+    try {
+      const ghlRows = await db
+        .select()
+        .from(settings)
+        .where(inArray(settings.key, ['ghl_enabled', 'ghl_api_key', 'ghl_location_id']));
+
+      const ghlMap: Record<string, string> = {};
+      for (const row of ghlRows) ghlMap[row.key] = row.value;
+
+      if (ghlMap['ghl_enabled'] === 'true' && ghlMap['ghl_api_key'] && ghlMap['ghl_location_id']) {
+        void syncOrderToGHL(ghlMap['ghl_api_key'], ghlMap['ghl_location_id'], {
+          name: customerName,
+          email: customerEmail,
+          phone: phone,
+          orderNumber: orderNumber,
+          total: total,
+          deliveryAddress: deliveryAddress || null,
+        });
+      }
+    } catch (ghlError) {
+      console.error('[GHL] Error loading settings (non-blocking):', ghlError);
+    }
+    // ─────────────────────────────────────────────────────────────
+
     return NextResponse.json(newOrder[0], { status: 201 });
   } catch (error) {
     console.error('POST error:', error);
-    
+
     // Capture error in Sentry
     Sentry.captureException(error, {
       tags: {

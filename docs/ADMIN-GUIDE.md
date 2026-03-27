@@ -11,8 +11,9 @@ Esta guía te ayudará a usar todas las funciones del panel de administración d
 3. [Gestión de Pedidos](#gestión-de-pedidos)
 4. [Gestión de Productos](#gestión-de-productos)
 5. [Gestión de Categorías](#gestión-de-categorías)
-6. [Mejores Prácticas](#mejores-prácticas)
-7. [Solución de Problemas](#solución-de-problemas)
+6. [Gestión de Imágenes](#gestión-de-imágenes)
+7. [Mejores Prácticas](#mejores-prácticas)
+8. [Solución de Problemas](#solución-de-problemas)
 
 ---
 
@@ -158,13 +159,14 @@ Usa el selector desplegable en la parte superior:
    - **Categoría**: Selecciona del menú
    - **Stock Inicial**: 50
    - **Descripción**: Texto descriptivo opcional
+   - **Imagen**: Sube una foto del producto (opcional, ver [Gestión de Imágenes](#gestión-de-imágenes))
 3. Clic en **"+ Agregar Producto"**
 
 ### Editar Producto
 
 1. Busca el producto en la lista
 2. Clic en el ícono azul de **lápiz (Editar)**
-3. Modifica los campos necesarios
+3. Modifica los campos necesarios — puedes cambiar la imagen y la anterior se elimina automáticamente
 4. Clic en **"💾 Guardar"** o **"✗"** para cancelar
 
 ### Activar/Desactivar Producto
@@ -217,6 +219,7 @@ Las categorías organizan tu menú y facilitan la navegación.
 2. Rellena el formulario:
    - **Nombre**: "Tacos"
    - **Emoji**: 🌮 (copia y pega o escribe)
+   - **Imagen**: Foto representativa de la categoría (opcional, ver [Gestión de Imágenes](#gestión-de-imágenes))
 3. Clic en **"+ Agregar"**
 
 ### Emojis Recomendados por Categoría
@@ -261,6 +264,109 @@ Las categorías organizan tu menú y facilitan la navegación.
 
 ---
 
+## 🖼️ Gestión de Imágenes
+
+El sistema de imágenes de Porkyrios está diseñado para ser **eficiente y sin desperdicio**: cada imagen vieja se elimina automáticamente cuando subes una nueva, y nunca quedan archivos huérfanos en el servidor.
+
+---
+
+### Cómo Subir una Imagen
+
+Tanto en productos como en categorías, el flujo es el mismo:
+
+1. Haz clic en el botón **"📷 Subir imagen"** (o el área de selección de archivo)
+2. Elige una foto desde tu dispositivo o computadora
+3. El sistema la **optimiza automáticamente** antes de enviarla:
+   - Convierte a formato **WebP** (menor peso, mejor calidad)
+   - Redimensiona a un máximo de **800px de ancho** (conservando proporción)
+   - Comprime al **80% de calidad** — balance óptimo entre nitidez y tamaño
+4. Verás una barra de progreso mientras se sube
+5. Al terminar, aparece un mensaje con el tamaño final en KB
+
+**Formatos de entrada aceptados**: JPG, PNG, GIF, HEIC (iPhone), WEBP, BMP
+**Tamaño máximo de entrada**: 10 MB
+**Tamaño típico de salida**: 30–120 KB
+
+---
+
+### Reemplazar una Imagen Existente
+
+Simplemente sube una nueva imagen sobre la existente:
+
+1. Edita el producto o categoría que ya tiene imagen
+2. Haz clic en el botón de imagen y selecciona la nueva foto
+3. El sistema **elimina la imagen anterior del servidor** antes de guardar la nueva
+4. No quedan archivos viejos acumulados
+
+> **Importante**: El borrado del archivo antiguo ocurre al momento de la subida, no al guardar. Si cancelas el formulario después de subir, la imagen vieja ya fue eliminada y la nueva quedará asignada al guardar.
+
+---
+
+### Eliminar una Imagen (sin borrar el producto/categoría)
+
+Cuando un producto o categoría tiene imagen, aparece un botón rojo de **eliminar imagen** junto al ítem en la lista:
+
+1. Busca el producto o categoría en la lista
+2. Clic en el botón **"🖼️ 🗑️"** (ícono imagen + basurero)
+3. El sistema:
+   - Elimina el archivo físico del servidor
+   - Actualiza el registro en la base de datos (queda sin imagen)
+4. El producto/categoría sigue existiendo, solo sin foto
+
+---
+
+### Monitor de Almacenamiento
+
+En el **Dashboard** encontrarás una tarjeta de **"Almacenamiento de Imágenes"** que muestra:
+
+- Espacio usado en MB (suma de todas las imágenes de productos y categorías)
+- Límite virtual de **25 MB**
+- Barra de progreso con colores indicadores:
+  - **Naranja** (0–60%): Uso normal
+  - **Amarillo** (60–80%): Empieza a considerar limpiar imágenes innecesarias
+  - **Rojo (>80%)**: Límite próximo — elimina imágenes de productos inactivos
+
+> El límite de 25 MB es una referencia de gestión, no un bloqueo técnico del servidor.
+
+---
+
+### Imágenes en el Menú Público
+
+- Las imágenes se cargan con **lazy loading** (solo cuando el usuario hace scroll hasta el producto)
+- El service worker guarda las imágenes en **caché separado** (`porkyrios-images-v1`)
+- Usa la estrategia **Stale-While-Revalidate**: muestra la imagen cacheada de inmediato y actualiza en segundo plano
+- Las imágenes permanecen disponibles offline después de la primera visita
+
+---
+
+### Recomendaciones para Mejores Imágenes
+
+| Aspecto | Recomendación |
+|---------|--------------|
+| **Composición** | Foto cuadrada o 4:3, enfocada en el producto |
+| **Iluminación** | Luz natural o buena iluminación artificial, sin sombras duras |
+| **Fondo** | Fondo limpio o neutro (blanco, madera, pizarra) |
+| **Resolución original** | Mínimo 800×800 px para buena calidad después de la compresión |
+| **Tamaño del archivo** | Hasta 10 MB acepta el sistema; el resultado final será ≤120 KB |
+
+---
+
+### Flujo Técnico Resumido
+
+```
+[Usuario selecciona imagen]
+        ↓
+[Canvas API: resize → WebP → 80% quality]
+        ↓
+[Si ya había imagen → DELETE /api/upload?publicId=xxx]  ← Garbage Collection
+        ↓
+[POST /api/upload → guarda .webp → retorna url + publicId + size]
+        ↓
+[Se almacena url, publicId y size en la base de datos]
+```
+
+---
+
 ## 💡 Mejores Prácticas
 
 ### Gestión de Inventario
@@ -284,11 +390,20 @@ Las categorías organizan tu menú y facilitan la navegación.
 ✅ **Precios claros y actualizados**  
 ✅ **Descripciones que destaquen ingredientes especiales**
 
+### Gestión de Imágenes
+
+✅ **Subir imágenes con buena iluminación y fondo limpio**
+✅ **Revisar el monitor de almacenamiento mensualmente**
+✅ **Eliminar imágenes de productos inactivos cuando el espacio esté al 80%**
+✅ **Usar imágenes de al menos 800×800 px para mejor calidad**
+❌ **No subir la misma imagen múltiples veces** — cada subida ocupa espacio
+❌ **No subir imágenes de más de 10 MB** — usa una herramienta de compresión previa si es necesario
+
 ### Seguridad
 
-✅ **Cambiar la contraseña por defecto**  
-✅ **No compartir credenciales**  
-✅ **Cerrar sesión en dispositivos compartidos**  
+✅ **Cambiar la contraseña por defecto**
+✅ **No compartir credenciales**
+✅ **Cerrar sesión en dispositivos compartidos**
 ✅ **Usar contraseñas fuertes**
 
 ---
@@ -359,6 +474,40 @@ Las categorías organizan tu menú y facilitan la navegación.
 
 ---
 
+### La imagen no se sube / error al subir
+
+**Posibles causas y soluciones**:
+
+| Problema | Causa | Solución |
+|---------|-------|----------|
+| "El archivo es demasiado grande" | Imagen > 10 MB | Usa una imagen de menor tamaño o comprime antes |
+| La barra de progreso no avanza | Conexión lenta o timeout | Verifica tu internet, intenta con imagen más pequeña |
+| La imagen se sube pero no se ve | Error de caché del navegador | Ctrl + Shift + R para recargar sin caché |
+| "Error al procesar imagen" | Formato no soportado o archivo corrupto | Convierte a JPG o PNG antes de subir |
+
+---
+
+### El monitor de almacenamiento muestra más del esperado
+
+**Causa**: Los tamaños se calculan sumando el campo `imageSize` en la base de datos. Si hay imágenes que se subieron antes de la actualización del sistema, pueden no tener tamaño registrado.
+
+**Solución**: No es un problema funcional. Los archivos existen correctamente en el servidor. El contador se actualiza automáticamente con las próximas subidas.
+
+---
+
+### La imagen vieja sigue apareciendo después de cambiarla
+
+**Causa**: El Service Worker guardó la imagen en caché.
+
+**Solución**:
+1. En Chrome/Edge: abre DevTools (F12) → Application → Storage → Clear storage
+2. Recarga la página
+3. La imagen nueva aparecerá de inmediato
+
+Alternativamente, espera que el Service Worker revalide en segundo plano (generalmente menos de 30 segundos).
+
+---
+
 ## 📞 Soporte Técnico
 
 Si necesitas ayuda adicional:
@@ -374,6 +523,7 @@ Si necesitas ayuda adicional:
 - [Documentación API](./API.md) - Para integraciones
 - [README Principal](../README.md) - Información general
 - [PWA Guide](../PWA-README.md) - App instalable
+- [Guía de Imágenes](#gestión-de-imágenes) - Subir y gestionar imágenes de productos/categorías
 
 ---
 

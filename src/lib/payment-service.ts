@@ -25,6 +25,8 @@ export async function createPaymentPreference(
           failure: `${baseUrl}/tracking?status=failure`,
           pending: `${baseUrl}/tracking?status=pending`,
         },
+        auto_return: 'approved',
+        statement_descriptor: 'Porkyrios',
         notification_url: `${baseUrl}/api/payment/webhook`,
         external_reference: data.orderId,
       },

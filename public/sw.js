@@ -31,7 +31,7 @@ self.addEventListener('activate', (event) => {
     caches.keys().then((cacheNames) => {
       return Promise.all(
         cacheNames.map((cacheName) => {
-          if (cacheName !== CACHE_NAME) {
+          if (cacheName !== CACHE_NAME && cacheName !== IMAGE_CACHE_NAME) {
             console.log('Deleting old cache:', cacheName);
             return caches.delete(cacheName);
           }
@@ -42,6 +42,8 @@ self.addEventListener('activate', (event) => {
   return self.clients.claim();
 });
 
+const IMAGE_CACHE_NAME = 'porkyrios-images-v1';
+
 // Fetch event - serve from cache, fallback to network
 self.addEventListener('fetch', (event) => {
   // Skip non-GET requests
@@ -51,6 +53,26 @@ self.addEventListener('fetch', (event) => {
 
   // Skip chrome-extension and other non-http(s) requests
   if (!event.request.url.startsWith('http')) {
+    return;
+  }
+
+  // Stale-While-Revalidate for /uploads/ images
+  if (event.request.url.includes('/uploads/')) {
+    event.respondWith(
+      caches.open(IMAGE_CACHE_NAME).then((cache) => {
+        return cache.match(event.request).then((cachedResponse) => {
+          const networkFetch = fetch(event.request).then((networkResponse) => {
+            if (networkResponse && networkResponse.status === 200) {
+              cache.put(event.request, networkResponse.clone());
+            }
+            return networkResponse;
+          }).catch(() => cachedResponse);
+
+          // Return cached immediately, revalidate in background
+          return cachedResponse || networkFetch;
+        });
+      })
+    );
     return;
   }
 
