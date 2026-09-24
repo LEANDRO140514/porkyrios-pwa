@@ -112,10 +112,13 @@ export interface OrderStatusEmailData {
  */
 export async function sendOrderStatusEmail(data: OrderStatusEmailData): Promise<boolean> {
   try {
+    // The route requires an admin session; send the better-auth bearer token
+    const token = typeof window !== 'undefined' ? localStorage.getItem('bearer_token') : null;
     const response = await fetch('/api/emails/status-update', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       body: JSON.stringify(data),
     });

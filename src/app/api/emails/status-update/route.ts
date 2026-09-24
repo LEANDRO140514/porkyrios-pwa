@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/resend';
+import { requireAdmin } from '@/lib/admin-auth';
 import OrderStatusUpdate from '@/emails/OrderStatusUpdate';
 
 export async function POST(request: NextRequest) {
   try {
+    const admin = await requireAdmin(request);
+    if (!admin.ok) {
+      return NextResponse.json(
+        { error: admin.status === 401 ? 'No autenticado' : 'No autorizado' },
+        { status: admin.status }
+      );
+    }
+
     const body = await request.json();
     const { email, orderNumber, customerName, status, statusMessage, estimatedTime } = body;
 

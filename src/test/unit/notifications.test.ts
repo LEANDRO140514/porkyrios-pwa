@@ -15,10 +15,12 @@ describe('sendOrderStatusEmail', () => {
   });
 
   afterEach(() => {
+    localStorage.clear();
     vi.restoreAllMocks();
   });
 
-  it('posts the fields required by /api/emails/status-update', async () => {
+  it('posts the fields required by /api/emails/status-update with the admin bearer token', async () => {
+    localStorage.setItem('bearer_token', 'token123');
     (global.fetch as any).mockResolvedValue({ ok: true, json: () => Promise.resolve({ success: true }) });
 
     const result = await sendOrderStatusEmail(data);
@@ -26,7 +28,7 @@ describe('sendOrderStatusEmail', () => {
     expect(result).toBe(true);
     expect(global.fetch).toHaveBeenCalledWith('/api/emails/status-update', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer token123' },
       body: JSON.stringify(data),
     });
   });
