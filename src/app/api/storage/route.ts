@@ -1,11 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import fs from 'fs/promises';
 import path from 'path';
 
 const STORAGE_LIMIT_BYTES = 25 * 1024 * 1024; // 25 MB virtual limit
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     let usedBytes = 0;
 

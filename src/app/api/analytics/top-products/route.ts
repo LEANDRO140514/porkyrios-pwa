@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { orderItems, products, orders } from '@/db/schema';
 import { sql, eq, desc } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const limitParam = searchParams.get('limit');

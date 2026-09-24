@@ -1,4 +1,4 @@
-const CACHE_NAME = 'porkyrios-v1';
+const CACHE_NAME = 'porkyrios-v2';
 const urlsToCache = [
   '/',
   '/menu',
@@ -53,6 +53,12 @@ self.addEventListener('fetch', (event) => {
 
   // Skip chrome-extension and other non-http(s) requests
   if (!event.request.url.startsWith('http')) {
+    return;
+  }
+
+  // Never cache API responses: they are per-user (sessions) and must stay fresh
+  // (order status, stock, prices)
+  if (new URL(event.request.url).pathname.startsWith('/api/')) {
     return;
   }
 

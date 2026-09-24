@@ -32,7 +32,8 @@ when confirmed project facts change.
 - `next build` type-checks and lints the whole project (no `ignoreBuildErrors` / `ignoreDuringBuilds`); keep `npx tsc --noEmit` and `npm run lint` at zero errors.
 - Dynamic Drizzle queries that are reassigned (`query = query.where(...)`) must start with `.$dynamic()`.
 - `vitest.config.ts` excludes `src/test/e2e/**`; those Playwright specs run only via `npm run test:e2e`.
-- Server-side admin = a better-auth session (cookie or Bearer token) whose email is in `ADMIN_EMAILS`; use `requireAdmin` from `src/lib/admin-auth.ts`. The `/admin` page itself only has a client-side password, and most admin API routes do not call `requireAdmin` yet.
+- Admin = a better-auth session (cookie or Bearer token) whose email is in `ADMIN_EMAILS`. API routes guard with `adminOnly`/`requireAdmin` from `src/lib/admin-auth.ts`; `/admin` checks `GET /api/admin/me`. Covered by `src/test/unit/admin-routes.test.ts` — add new admin routes there.
+- `public/sw.js` must never cache `/api/*` (per-user and live data); bump `CACHE_NAME` when changing what it caches.
 - Emails to customers take the recipient from the order in the database (`getOrderEmailData` in `src/lib/order-email.ts`), never from the request body.
 - Env vars reference: `.env.example` (never commit `.env*` files with real values).
 

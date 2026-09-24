@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { settings } from '@/db/schema';
 import { inArray, eq } from 'drizzle-orm';
@@ -7,7 +8,10 @@ export const runtime = 'nodejs';
 
 const GHL_KEYS = ['ghl_enabled', 'ghl_api_key', 'ghl_location_id'];
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const rows = await db
       .select()
@@ -31,6 +35,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { enabled, apiKey, locationId } = body as {

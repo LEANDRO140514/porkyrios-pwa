@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 
 // This is a mock API for sending notifications
 // In production, you'd use a service like Firebase Cloud Messaging or OneSignal
 
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { title, body: message, url, orderNumber } = body;

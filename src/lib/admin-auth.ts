@@ -1,3 +1,4 @@
+import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 
 /**
@@ -32,4 +33,21 @@ export async function requireAdmin(request: Request): Promise<AdminCheck> {
     return { ok: false, status: 403 };
   }
   return { ok: true, user: { id: session.user.id, email: session.user.email } };
+}
+
+/**
+ * Route guard: returns a 401/403 response to send back, or null when the
+ * request comes from an admin.
+ *   const denied = await adminOnly(request);
+ *   if (denied) return denied;
+ */
+export async function adminOnly(request: Request): Promise<NextResponse | null> {
+  const check = await requireAdmin(request);
+  if (check.ok) {
+    return null;
+  }
+  return NextResponse.json(
+    { error: check.status === 401 ? 'No autenticado' : 'No autorizado' },
+    { status: check.status }
+  );
 }

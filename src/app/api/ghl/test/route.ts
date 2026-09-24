@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { testGHLConnection } from '@/lib/ghl';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { apiKey, locationId } = body as { apiKey: string; locationId: string };

@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { settings } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+
+// Settings the public site reads; everything else is admin-only
+const PUBLIC_SETTING_KEYS = ['reviews_section_enabled', 'tracking_section_enabled'];
 
 export async function GET(request: NextRequest) {
   try {
@@ -17,6 +21,12 @@ export async function GET(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Only a few flags are public; any other key (e.g. ghl_api_key) needs an admin
+    if (!PUBLIC_SETTING_KEYS.includes(key)) {
+      const denied = await adminOnly(request);
+      if (denied) return denied;
     }
 
     // Query setting by key
@@ -69,6 +79,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const key = searchParams.get('key');
