@@ -34,6 +34,7 @@ when confirmed project facts change.
 - `vitest.config.ts` excludes `src/test/e2e/**`; those Playwright specs run only via `npm run test:e2e`.
 - Admin = a better-auth session (cookie or Bearer token) whose email is in `ADMIN_EMAILS`. API routes guard with `adminOnly`/`requireAdmin` from `src/lib/admin-auth.ts`; `/admin` checks `GET /api/admin/me`. Covered by `src/test/unit/admin-routes.test.ts` — add new admin routes there.
 - `public/sw.js` must never cache `/api/*` (per-user and live data); bump `CACHE_NAME` when changing what it caches.
+- Customers track orders only via `POST /api/orders/track` (order number + phone, see `src/lib/order-tracking.ts`); `GET /api/orders` and `GET /api/orders/items` are admin-only. The payment page stores `{orderNumber, phone}` via `src/lib/last-order.ts` so `/tracking?order=` can auto-track.
 - Emails to customers take the recipient from the order in the database (`getOrderEmailData` in `src/lib/order-email.ts`), never from the request body.
 - Env vars reference: `.env.example` (never commit `.env*` files with real values).
 

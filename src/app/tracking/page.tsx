@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { CheckCircle2, Clock, ChefHat, Package, CheckCheck, Search, Loader2, Truck, XCircle, CreditCard, MapPin, Bell } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { readLastOrder } from "@/lib/last-order";
 import { useSession } from "@/lib/auth-client";
 import { toast } from "sonner";
 import Image from "next/image";
@@ -149,6 +150,7 @@ export default function TrackingPage() {
   const effectiveOrderParam = orderParam || externalRef;
 
   const [searchQuery, setSearchQuery] = useState(effectiveOrderParam || "");
+  const [phoneQuery, setPhoneQuery] = useState("");
   const [order, setOrder] = useState<Order | null>(null);
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -174,20 +176,29 @@ export default function TrackingPage() {
     checkTracking();
   }, []);
 
+  // Orders are looked up by order number + the phone used at checkout
+  const trackOrder = async (orderNumber: string, phone: string) => {
+    return fetch("/api/orders/track", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderNumber, phone }),
+    });
+  };
+
   const fetchOrderUpdate = useCallback(async () => {
     if (!order) return;
 
     try {
-      const orderResponse = await fetch(`/api/orders?id=${order.id}`);
-      
-      if (orderResponse.ok) {
-        const updatedOrder = await orderResponse.json();
-        
+      const response = await trackOrder(order.orderNumber, order.phone);
+
+      if (response.ok) {
+        const { order: updatedOrder } = await response.json();
+
         // Check if status changed
         if (updatedOrder.status !== order.status) {
           toast.success(`Estado actualizado: ${statusConfig[updatedOrder.status as OrderStatus].label}`);
         }
-        
+
         setOrder(updatedOrder);
       }
     } catch (error) {
@@ -195,11 +206,12 @@ export default function TrackingPage() {
     }
   }, [order]);
 
-  const handleSearch = useCallback(async (orderNumber?: string) => {
-    const query = orderNumber || searchQuery.trim();
-    
-    if (!query) {
-      toast.error("Por favor ingresa un número de orden");
+  const handleSearch = useCallback(async (orderNumber?: string, phone?: string) => {
+    const query = (orderNumber || searchQuery).trim();
+    const phoneValue = (phone || phoneQuery).trim();
+
+    if (!query || !phoneValue) {
+      toast.error("Ingresa tu número de orden y el teléfono con el que hiciste el pedido");
       return;
     }
 
@@ -207,12 +219,11 @@ export default function TrackingPage() {
     setHasSearched(true);
 
     try {
-      // Search order by order number
-      const orderResponse = await fetch(`/api/orders?orderNumber=${encodeURIComponent(query)}`);
-      
-      if (!orderResponse.ok) {
-        if (orderResponse.status === 404) {
-          toast.error("Orden no encontrada");
+      const response = await trackOrder(query, phoneValue);
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          toast.error("No encontramos un pedido con ese número y teléfono");
           setOrder(null);
           setOrderItems([]);
           return;
@@ -220,25 +231,9 @@ export default function TrackingPage() {
         throw new Error("Error al buscar la orden");
       }
 
-      const orders = await orderResponse.json();
-      
-      if (!orders || orders.length === 0) {
-        toast.error("Orden no encontrada");
-        setOrder(null);
-        setOrderItems([]);
-        return;
-      }
-
-      const foundOrder = orders[0];
+      const { order: foundOrder, items } = await response.json();
       setOrder(foundOrder);
-
-      // Fetch order items
-      const itemsResponse = await fetch(`/api/orders/items?orderId=${foundOrder.id}`);
-      
-      if (itemsResponse.ok) {
-        const items = await itemsResponse.json();
-        setOrderItems(items);
-      }
+      setOrderItems(items);
 
       toast.success("Orden encontrada");
     } catch (error) {
@@ -249,7 +244,7 @@ export default function TrackingPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery]);
+  }, [searchQuery, phoneQuery]);
 
   // Protect route - redirect to login if not authenticated
   useEffect(() => {
@@ -271,10 +266,14 @@ export default function TrackingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Auto-search if order param or external_reference from MP is present
+  // Auto-search when returning from checkout/MercadoPago: the payment page
+  // remembers the order number and phone in this browser
   useEffect(() => {
-    if (effectiveOrderParam && !hasSearched) {
-      handleSearch(effectiveOrderParam);
+    if (!effectiveOrderParam || hasSearched) return;
+    const saved = readLastOrder();
+    if (saved?.orderNumber === effectiveOrderParam) {
+      setPhoneQuery(saved.phone);
+      handleSearch(effectiveOrderParam, saved.phone);
     }
   }, [effectiveOrderParam, handleSearch, hasSearched]);
 
@@ -372,17 +371,27 @@ export default function TrackingPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <p className="text-center text-muted-foreground text-sm md:text-base">
-              Ingresa tu número de orden para rastrear tu pedido en tiempo real
+              Ingresa tu número de orden y el teléfono con el que hiciste el pedido
             </p>
             <div className="flex gap-2">
               <Input
-                placeholder="POR-12345"
+                placeholder="PK-12345"
+                aria-label="Número de orden"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 className="text-base md:text-lg h-10 md:h-11"
               />
-              <Button onClick={() => handleSearch()} disabled={isLoading} className="h-10 md:h-11">
+              <Input
+                type="tel"
+                placeholder="Teléfono"
+                aria-label="Teléfono"
+                value={phoneQuery}
+                onChange={(e) => setPhoneQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="text-base md:text-lg h-10 md:h-11"
+              />
+              <Button onClick={() => handleSearch()} disabled={isLoading} className="h-10 md:h-11" aria-label="Buscar pedido">
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               </Button>
             </div>
@@ -443,13 +452,23 @@ export default function TrackingPage() {
           <CardContent className="pt-4 md:pt-6">
             <div className="flex gap-2">
               <Input
-                placeholder="POR-12345"
+                placeholder="PK-12345"
+                aria-label="Número de orden"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 className="text-sm md:text-base h-10 md:h-11"
               />
-              <Button onClick={() => handleSearch()} disabled={isLoading} className="h-10 md:h-11">
+              <Input
+                type="tel"
+                placeholder="Teléfono"
+                aria-label="Teléfono"
+                value={phoneQuery}
+                onChange={(e) => setPhoneQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                className="text-sm md:text-base h-10 md:h-11"
+              />
+              <Button onClick={() => handleSearch()} disabled={isLoading} className="h-10 md:h-11" aria-label="Buscar pedido">
                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
               </Button>
             </div>

@@ -11,6 +11,7 @@ import { useCart } from "@/contexts/CartContext";
 import { useSession, authClient } from "@/lib/auth-client";
 import { SocialLoginButtons } from "@/components/auth/SocialLoginButtons";
 import { toast } from "sonner";
+import { saveLastOrder } from "@/lib/last-order";
 import Image from "next/image";
 
 export default function PaymentPage() {
@@ -393,7 +394,8 @@ export default function PaymentPage() {
       }
 
       clearCart();
-      
+      saveLastOrder({ orderNumber, phone: formData.phone });
+
       setTimeout(() => {
         router.push(`/tracking?order=${orderNumber}`);
       }, 2000);

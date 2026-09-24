@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { orderItems, orders, products } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 
+// Admin-only: customers get their items through POST /api/orders/track
 export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const orderId = searchParams.get('orderId');
