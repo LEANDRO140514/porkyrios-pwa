@@ -8,7 +8,11 @@ import { syncOrderToGHL } from '@/lib/ghl';
 
 const VALID_STATUSES = ['pending_payment', 'preparing', 'cooking', 'packing', 'ready', 'completed', 'cancelled'];
 
+// Admin-only: customers track their order through POST /api/orders/track
 export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const id = searchParams.get('id');
@@ -43,12 +47,6 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') ?? '0');
     const status = searchParams.get('status');
     const orderNumber = searchParams.get('orderNumber');
-
-    // Looking up one order by number is public (tracking page); listing orders is admin-only
-    if (!orderNumber) {
-      const denied = await adminOnly(request);
-      if (denied) return denied;
-    }
 
     let query = db.select().from(orders).$dynamic();
 

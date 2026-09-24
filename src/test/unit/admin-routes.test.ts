@@ -45,6 +45,7 @@ const routes: Record<string, () => Promise<unknown>> = {
   'promotional-banner/[id]': () => import('@/app/api/promotional-banner/[id]/route'),
   settings: () => import('@/app/api/settings/route'),
   orders: () => import('@/app/api/orders/route'),
+  'orders/items': () => import('@/app/api/orders/items/route'),
 };
 
 const adminOnly: [string, string, string?][] = [
@@ -91,6 +92,9 @@ const adminOnly: [string, string, string?][] = [
   ['orders', 'PUT'],
   ['orders', 'DELETE'],
   ['orders', 'GET'],
+  ['orders', 'GET', '?id=1'],
+  ['orders', 'GET', '?orderNumber=PK-12345'],
+  ['orders/items', 'GET', '?orderId=1'],
 ];
 
 const publicCalls: [string, string, string][] = [
@@ -98,8 +102,6 @@ const publicCalls: [string, string, string][] = [
   ['products', 'GET', ''],
   ['promotional-banner', 'GET', ''],
   ['settings', 'GET', '?key=tracking_section_enabled'],
-  ['orders', 'GET', '?orderNumber=PK-12345'],
-  ['orders', 'GET', '?id=1'],
 ];
 
 async function call(route: string, method: string, query = '') {
