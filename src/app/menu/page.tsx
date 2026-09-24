@@ -206,13 +206,15 @@ export default function MenuPage() {
         fetch("/api/products?limit=100"),
       ]);
 
-      if (categoriesRes.ok && productsRes.ok) {
-        const categoriesData = await categoriesRes.json();
-        const productsData = await productsRes.json();
-        
-        setCategories(categoriesData.filter((c: Category) => c.active));
-        setProducts(productsData.filter((p: Product) => p.active && p.stock > 0));
+      if (!categoriesRes.ok || !productsRes.ok) {
+        throw new Error(`API error: categories ${categoriesRes.status}, products ${productsRes.status}`);
       }
+
+      const categoriesData = await categoriesRes.json();
+      const productsData = await productsRes.json();
+
+      setCategories(categoriesData.filter((c: Category) => c.active));
+      setProducts(productsData.filter((p: Product) => p.active && p.stock > 0));
     } catch (error) {
       console.error("Error fetching data:", error);
       toast.error("Error al cargar el menú");

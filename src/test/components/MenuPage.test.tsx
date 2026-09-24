@@ -456,8 +456,7 @@ describe('MenuPage Component', () => {
   });
 
   describe('Error Handling', () => {
-    // Non-OK responses show the empty state; the error toast is only for network errors
-    it('should show empty state when API returns an error status', async () => {
+    it('should show error toast when API returns an error status', async () => {
       (global.fetch as any).mockImplementation(() => {
         return Promise.resolve({
           ok: false,
@@ -471,7 +470,7 @@ describe('MenuPage Component', () => {
         expect(screen.getByText('No se encontraron productos')).toBeInTheDocument();
       }, { timeout: 2000 });
       
-      expect(toast.error).not.toHaveBeenCalled();
+      expect(toast.error).toHaveBeenCalledWith('Error al cargar el menú');
     });
 
     it('should handle network error gracefully', async () => {
