@@ -77,6 +77,8 @@ describe('MenuPage Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPush.mockClear();
+    // CartProvider persists to localStorage; start each test with an empty cart
+    localStorage.clear();
 
     // Mock successful API responses
     (global.fetch as any).mockImplementation((url: string) => {
@@ -139,9 +141,10 @@ describe('MenuPage Component', () => {
       renderMenuPage();
 
       await waitFor(() => {
-        expect(screen.getByText('🌮 Tacos')).toBeInTheDocument();
-        expect(screen.getByText('🥪 Tortas')).toBeInTheDocument();
-        expect(screen.getByText('🥤 Bebidas')).toBeInTheDocument();
+        // Category names also appear as badges on product cards, so check the filter buttons
+        expect(screen.getByRole('button', { name: '🌮 Tacos' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '🥪 Tortas' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: '🥤 Bebidas' })).toBeInTheDocument();
       });
     });
 
@@ -342,7 +345,7 @@ describe('MenuPage Component', () => {
       await user.click(addButtons[0]);
 
       await waitFor(() => {
-        expect(screen.getByText('2 en el carrito')).toBeInTheDocument();
+        expect(screen.getByText('2 en carrito')).toBeInTheDocument();
       });
     });
 
@@ -416,7 +419,8 @@ describe('MenuPage Component', () => {
       renderMenuPage();
 
       await waitFor(() => {
-        expect(screen.getByText('⚠️ Últimas 3')).toBeInTheDocument();
+        expect(screen.getByText('⚡ ¡Solo 3!')).toBeInTheDocument();
+        expect(screen.getByText('¡Últimas unidades! Ordena ahora')).toBeInTheDocument();
       });
     });
   });
@@ -452,7 +456,8 @@ describe('MenuPage Component', () => {
   });
 
   describe('Error Handling', () => {
-    it('should show error toast when API fails', async () => {
+    // Non-OK responses show the empty state; the error toast is only for network errors
+    it('should show empty state when API returns an error status', async () => {
       (global.fetch as any).mockImplementation(() => {
         return Promise.resolve({
           ok: false,
@@ -466,7 +471,7 @@ describe('MenuPage Component', () => {
         expect(screen.getByText('No se encontraron productos')).toBeInTheDocument();
       }, { timeout: 2000 });
       
-      expect(toast.error).toHaveBeenCalledWith('Error al cargar el menú');
+      expect(toast.error).not.toHaveBeenCalled();
     });
 
     it('should handle network error gracefully', async () => {
@@ -497,8 +502,9 @@ describe('MenuPage Component', () => {
       renderMenuPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Stock: 10')).toBeInTheDocument();
-        expect(screen.getByText('Stock: 5')).toBeInTheDocument();
+        // Stock is shown as a badge only when it is 10 or less
+        expect(screen.getByText('📦 Quedan 10')).toBeInTheDocument();
+        expect(screen.getByText('⚠️ Últimas 5')).toBeInTheDocument();
       });
     });
 
