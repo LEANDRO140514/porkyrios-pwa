@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { WebhookPayload } from '@/types/mercadopago';
 import { getPaymentStatus } from '@/lib/payment-service';
-import { db } from '@/db';
-import { orders } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { applyPaymentUpdate } from '@/lib/payment-processing';
 
 export const runtime = 'nodejs';
 
@@ -58,19 +56,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Map payment status to order status
-    const orderStatus = mapPaymentStatusToOrderStatus(paymentData.status);
+    // Idempotent: repeated or out-of-order notifications never double-count stock
+    const result = await applyPaymentUpdate({
+      orderNumber,
+      paymentId: String(paymentData.id),
+      status: paymentData.status,
+      amount: Number(paymentData.transaction_amount) || 0,
+    });
 
-    // Update order in database
-    await db
-      .update(orders)
-      .set({
-        status: orderStatus,
-        updatedAt: new Date().toISOString(),
-      })
-      .where(eq(orders.orderNumber, orderNumber));
-
-    console.log(`[MercadoPago Webhook] Order ${orderNumber} updated to ${orderStatus}`);
+    console.log(`[MercadoPago Webhook] Order ${orderNumber}: payment ${paymentData.status} -> ${result}`);
 
     // Return 200 to confirm receipt
     return NextResponse.json(
@@ -80,29 +74,11 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('[MercadoPago Webhook] Processing error:', error);
 
-    // Always return 200 to MercadoPago to prevent retries
+    // Let MercadoPago retry: processing is idempotent, so a retry cannot double-count
     return NextResponse.json(
-      { received: true },
-      { status: 200 }
+      { received: false },
+      { status: 500 }
     );
-  }
-}
-
-function mapPaymentStatusToOrderStatus(mpStatus: string): string {
-  switch (mpStatus) {
-    case 'approved':
-      return 'confirmed';
-    case 'rejected':
-    case 'cancelled':
-      return 'cancelled';
-    case 'refunded':
-      return 'cancelled';
-    case 'pending':
-    case 'in_process':
-    case 'in_mediation':
-      return 'pending_payment';
-    default:
-      return 'pending_payment';
   }
 }
 
