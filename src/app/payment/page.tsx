@@ -267,80 +267,42 @@ export default function PaymentPage() {
         return;
       }
 
-      // Generate order
-      const orderNumber = `PK-${Math.floor(10000 + Math.random() * 90000)}`;
-      const subtotal = getTotal();
-      const deliveryCost = getDeliveryCost();
-      const iva = subtotal * 0.16;
-      const discount = appliedCoupon?.discount || 0;
-      const total = subtotal + iva + deliveryCost - discount;
-
-      // Create order with customerEmail, deliveryAddress, and postalCode
-      const orderResponse = await fetch("/api/orders", {
+      // Create the order on the server: prices, delivery cost, coupon and
+      // total are computed from the database, not from this page
+      const checkoutResponse = await fetch("/api/checkout", {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${localStorage.getItem("bearer_token")}`
         },
         body: JSON.stringify({
-          orderNumber,
-          customerName: formData.name,
-          customerEmail: formData.email,
-          phone: formData.phone,
+          items: cart.map(item => ({ productId: item.id, quantity: item.quantity })),
+          deliveryMethod,
           deliveryAddress: deliveryMethod === "delivery" ? deliveryAddress : null,
           postalCode: deliveryMethod === "delivery" ? postalCode : null,
-          total,
-          status: "pending_payment",
-          deliveryMethod,
+          couponCode: appliedCoupon?.code ?? null,
+          phone: formData.phone,
         }),
       });
 
-      if (!orderResponse.ok) {
-        throw new Error("Error al crear la orden");
+      const checkout = await checkoutResponse.json().catch(() => ({}));
+      if (!checkoutResponse.ok) {
+        throw new Error(checkout.error || "Error al crear la orden");
       }
 
-      const order = await orderResponse.json();
+      const { orderNumber } = checkout;
 
-      // Create order items
-      for (const item of cart) {
-        await fetch("/api/orders/items", {
-          method: "POST",
-          headers: { 
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${localStorage.getItem("bearer_token")}`
-          },
-          body: JSON.stringify({
-            orderId: order.id,
-            productId: item.id,
-            quantity: item.quantity,
-            price: item.price,
-          }),
-        });
-      }
-
-      // Send confirmation email with delivery address and postal code
+      // Send confirmation email (recipient, items and total come from the stored order)
       try {
         const emailResponse = await fetch("/api/emails/order-confirmation", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            email: formData.email,
             orderNumber,
-            customerName: formData.name,
-            items: cart.map(item => ({
-              name: item.name,
-              quantity: item.quantity,
-              price: item.price,
-            })),
-            subtotal,
-            deliveryCost,
-            iva,
-            discount,
-            couponCode: appliedCoupon?.code,
-            total,
+            subtotal: checkout.subtotal,
+            deliveryCost: checkout.deliveryCost,
+            iva: checkout.iva,
             deliveryMethod,
-            deliveryAddress: deliveryMethod === "delivery" ? deliveryAddress : null,
-            postalCode: deliveryMethod === "delivery" ? postalCode : null,
             estimatedDelivery: "45-60 minutos",
           }),
         });
@@ -355,21 +317,18 @@ export default function PaymentPage() {
         console.error("Error enviando email:", emailError);
       }
 
-      // Create MercadoPago preference
-      const cartSummary = cart.map(item => `${item.name} x${item.quantity}`).join(", ");
-      
+      // Create MercadoPago preference (the server charges the stored order total)
+      const cartSummary = checkout.items
+        .map((item: { name: string; quantity: number }) => `${item.name} x${item.quantity}`)
+        .join(", ");
+
       const preferenceResponse = await fetch("/api/payment/preference", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title: `Pedido Porkyrios - ${orderNumber}`,
-          description: cartSummary,
-          price: total,
-          quantity: 1,
           externalReference: orderNumber,
-          payerEmail: formData.email,
+          description: cartSummary,
           payerName: formData.name,
-          payerPhone: formData.phone,
         }),
       });
 

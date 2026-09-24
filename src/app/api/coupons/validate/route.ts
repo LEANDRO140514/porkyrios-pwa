@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { coupons } from '@/db/schema';
-import { eq, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
+import { evaluateCoupon } from '@/lib/coupons';
 
 export async function POST(request: NextRequest) {
   try {
@@ -46,95 +47,22 @@ export async function POST(request: NextRequest) {
 
     const coupon = couponResults[0];
 
-    // 3. Check if coupon is active
-    if (!coupon.active) {
+    // 3. Apply the shared coupon rules. Uses are counted when an order is
+    // created (/api/checkout), not when a customer tries a code.
+    const evaluation = evaluateCoupon(coupon, subtotal);
+    if (!evaluation.valid) {
       return NextResponse.json({
         valid: false,
         discount: 0,
-        message: "Cupón inactivo"
+        message: evaluation.message
       }, { status: 200 });
     }
+    const discount = evaluation.discount;
 
-    // 4. Check start date
-    if (coupon.startDate) {
-      const startDate = new Date(coupon.startDate);
-      const currentDate = new Date();
-      
-      if (currentDate < startDate) {
-        return NextResponse.json({
-          valid: false,
-          discount: 0,
-          message: "Cupón aún no válido"
-        }, { status: 200 });
-      }
-    }
-
-    // 5. Check end date
-    if (coupon.endDate) {
-      const endDate = new Date(coupon.endDate);
-      const currentDate = new Date();
-      
-      if (currentDate > endDate) {
-        return NextResponse.json({
-          valid: false,
-          discount: 0,
-          message: "Cupón expirado"
-        }, { status: 200 });
-      }
-    }
-
-    // 6. Check usage limit
-    if (coupon.usageLimit !== null && coupon.usageLimit !== undefined) {
-      if (coupon.usedCount >= coupon.usageLimit) {
-        return NextResponse.json({
-          valid: false,
-          discount: 0,
-          message: "Cupón agotado"
-        }, { status: 200 });
-      }
-    }
-
-    // 7. Check minimum purchase
-    if (coupon.minPurchase !== null && coupon.minPurchase !== undefined) {
-      if (subtotal < coupon.minPurchase) {
-        return NextResponse.json({
-          valid: false,
-          discount: 0,
-          message: `Compra mínima requerida: $${coupon.minPurchase.toFixed(2)}`
-        }, { status: 200 });
-      }
-    }
-
-    // 8. Calculate discount based on type
-    let discount = 0;
-
-    if (coupon.type === "percentage") {
-      discount = (subtotal * coupon.value) / 100;
-      
-      // Apply max discount if exists
-      if (coupon.maxDiscount !== null && coupon.maxDiscount !== undefined && discount > coupon.maxDiscount) {
-        discount = coupon.maxDiscount;
-      }
-    } else if (coupon.type === "fixed") {
-      discount = coupon.value;
-      
-      // Can't discount more than total
-      if (discount > subtotal) {
-        discount = subtotal;
-      }
-    }
-
-    // 9. Increment usedCount
-    await db.update(coupons)
-      .set({ 
-        usedCount: coupon.usedCount + 1 
-      })
-      .where(eq(coupons.id, coupon.id));
-
-    // 10. Calculate final total
+    // 4. Calculate final total
     const finalTotal = subtotal - discount;
 
-    // 11. Return success response
+    // 5. Return success response
     return NextResponse.json({
       valid: true,
       coupon: {

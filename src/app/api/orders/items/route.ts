@@ -45,7 +45,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Admin-only: customers' items are created by POST /api/checkout
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { orderId, productId, quantity, price } = body;
