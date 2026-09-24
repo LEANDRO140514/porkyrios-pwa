@@ -202,6 +202,20 @@ describe('PaymentPage Component', () => {
       }, { timeout: 5000 });
     });
 
+    it('should not redirect to menu while a saved cart is loading', async () => {
+      localStorage.setItem('porkyrios_cart', JSON.stringify([
+        { id: 1, name: 'Taco al Pastor', price: 25.0, stock: 10, quantity: 1, categoryId: 1, image: null },
+      ]));
+
+      renderPaymentPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('Taco al Pastor')).toBeInTheDocument();
+      });
+      expect(mockPush).not.toHaveBeenCalledWith('/menu');
+      expect(toast.error).not.toHaveBeenCalledWith('Tu carrito está vacío');
+    });
+
     it('should warn the user if cart is empty', async () => {
       localStorage.setItem('porkyrios_cart', JSON.stringify([]));
 
