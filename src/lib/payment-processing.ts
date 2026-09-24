@@ -21,6 +21,7 @@ export type PaymentUpdateResult =
   | 'amount_mismatch'
   | 'order_not_found'
   | 'cancelled'
+  | 'refunded'
   | 'ignored';
 
 /**
@@ -109,11 +110,54 @@ export async function applyPaymentUpdate(update: PaymentUpdate): Promise<Payment
   }
 
   if (update.status === 'refunded' || update.status === 'charged_back') {
-    await db
-      .update(orders)
-      .set({ status: 'cancelled', updatedAt: now })
-      .where(eq(orders.id, order.id));
-    return 'cancelled';
+    return db.transaction(async (tx): Promise<PaymentUpdateResult> => {
+      await tx
+        .update(orders)
+        .set({ status: 'cancelled', updatedAt: now })
+        .where(eq(orders.id, order.id));
+
+      // Put back exactly what the sale took out, once: the 'return' movements
+      // recorded here mark the order as restocked
+      const movements = await tx
+        .select()
+        .from(inventoryMovements)
+        .where(and(eq(inventoryMovements.orderId, order.id), inArray(inventoryMovements.type, ['sale', 'return'])));
+
+      if (movements.some((m) => m.type === 'return')) {
+        return 'refunded';
+      }
+
+      for (const sale of movements.filter((m) => m.type === 'sale')) {
+        // What the sale actually removed (less than the quantity if stock ran out)
+        const quantity = sale.previousStock - sale.newStock;
+        if (quantity <= 0) continue;
+
+        const [product] = await tx
+          .select({ stock: products.stock })
+          .from(products)
+          .where(eq(products.id, sale.productId))
+          .limit(1);
+        if (!product) continue;
+
+        const previousStock = product.stock ?? 0;
+        const newStock = previousStock + quantity;
+
+        await tx.update(products).set({ stock: newStock }).where(eq(products.id, sale.productId));
+        await tx.insert(inventoryMovements).values({
+          productId: sale.productId,
+          type: 'return',
+          quantity,
+          previousStock,
+          newStock,
+          reason: `Reembolso pedido ${update.orderNumber} (pago MercadoPago ${update.paymentId})`,
+          orderId: order.id,
+          createdBy: 'mercadopago-webhook',
+          createdAt: new Date(),
+        });
+      }
+
+      return 'refunded';
+    });
   }
 
   // pending, in_process, in_mediation...: nothing changes

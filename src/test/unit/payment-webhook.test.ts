@@ -133,6 +133,76 @@ describe('applyPaymentUpdate', () => {
   });
 });
 
+describe('refunds', () => {
+  const refunded = { ...approved, status: 'refunded' };
+
+  beforeEach(async () => {
+    await reset();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  it('a refund cancels the order and puts the sold stock back with return movements', async () => {
+    await applyPaymentUpdate(approved);
+    await client.execute('UPDATE products SET stock = stock + 5 WHERE id = 1'); // restocked by the admin meanwhile
+
+    await expect(applyPaymentUpdate(refunded)).resolves.toBe('refunded');
+
+    expect(await orderStatus()).toBe('cancelled');
+    expect(await stock()).toEqual({ 1: 15, 2: 1 });
+    const returns = (await movements()).filter((m: any) => m.type === 'return');
+    expect(returns).toHaveLength(2);
+    expect(returns[0]).toMatchObject({ product_id: 1, quantity: 2, previous_stock: 13, new_stock: 15, order_id: 7 });
+  });
+
+  it('a repeated refund notification does not put stock back twice', async () => {
+    await applyPaymentUpdate(approved);
+
+    await applyPaymentUpdate(refunded);
+    await applyPaymentUpdate(refunded);
+    await applyPaymentUpdate({ ...refunded, status: 'charged_back' });
+
+    expect(await stock()).toEqual({ 1: 10, 2: 1 });
+    expect((await movements()).filter((m: any) => m.type === 'return')).toHaveLength(2);
+  });
+
+  it('restocks when the admin had already cancelled the paid order', async () => {
+    await applyPaymentUpdate(approved);
+    await client.execute("UPDATE orders SET status = 'cancelled' WHERE id = 7");
+
+    await applyPaymentUpdate(refunded);
+
+    expect(await stock()).toEqual({ 1: 10, 2: 1 });
+  });
+
+  it('treats a chargeback like a refund', async () => {
+    await applyPaymentUpdate(approved);
+
+    await expect(applyPaymentUpdate({ ...approved, status: 'charged_back' })).resolves.toBe('refunded');
+
+    expect(await orderStatus()).toBe('cancelled');
+    expect(await stock()).toEqual({ 1: 10, 2: 1 });
+  });
+
+  it('does not add stock for an order that was never paid', async () => {
+    await applyPaymentUpdate(refunded);
+
+    expect(await orderStatus()).toBe('cancelled');
+    expect(await stock()).toEqual({ 1: 10, 2: 1 });
+    expect(await movements()).toHaveLength(0);
+  });
+
+  it('only puts back what the sale actually removed when stock had run out', async () => {
+    await client.execute('UPDATE products SET stock = 0 WHERE id = 2'); // Torta sold out before payment
+    await applyPaymentUpdate(approved); // Torta: 0 -> 0 (nothing removed)
+
+    await applyPaymentUpdate(refunded);
+
+    expect(await stock()).toEqual({ 1: 10, 2: 0 });
+    expect((await movements()).filter((m: any) => m.type === 'return')).toHaveLength(1);
+  });
+});
+
 describe('POST /api/payment/webhook', () => {
   const notify = () =>
     POST(new NextRequest('http://localhost/api/payment/webhook', {
