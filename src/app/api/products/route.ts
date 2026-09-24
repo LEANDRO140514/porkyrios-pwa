@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const categoryId = searchParams.get('categoryId');
 
-    let query = db.select().from(products);
+    let query = db.select().from(products).$dynamic();
     const conditions = [];
 
     if (search) {

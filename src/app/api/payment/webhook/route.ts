@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       .update(orders)
       .set({
         status: orderStatus,
-        updatedAt: new Date(),
+        updatedAt: new Date().toISOString(),
       })
       .where(eq(orders.orderNumber, orderNumber));
 

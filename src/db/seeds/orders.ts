@@ -8,6 +8,7 @@ async function main() {
         {
             orderNumber: 'PK-10001',
             customerName: 'María García',
+            customerEmail: 'maria.garcia@example.com',
             phone: '555-0101',
             total: 24.50,
             status: 'completed',
@@ -17,6 +18,7 @@ async function main() {
         {
             orderNumber: 'PK-10002',
             customerName: 'Juan Hernández',
+            customerEmail: 'juan.hernandez@example.com',
             phone: '555-0102',
             total: 15.75,
             status: 'ready',
@@ -26,6 +28,7 @@ async function main() {
         {
             orderNumber: 'PK-10003',
             customerName: 'Ana Martínez',
+            customerEmail: 'ana.martinez@example.com',
             phone: '555-0103',
             total: 32.00,
             status: 'cooking',
@@ -35,6 +38,7 @@ async function main() {
         {
             orderNumber: 'PK-10004',
             customerName: 'Carlos López',
+            customerEmail: 'carlos.lopez@example.com',
             phone: '555-0104',
             total: 18.25,
             status: 'preparing',
@@ -44,6 +48,7 @@ async function main() {
         {
             orderNumber: 'PK-10005',
             customerName: 'Rosa Rodríguez',
+            customerEmail: 'rosa.rodriguez@example.com',
             phone: '555-0105',
             total: 45.50,
             status: 'packing',

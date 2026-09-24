@@ -9,7 +9,8 @@ export async function createPaymentPreference(
     
     const response = await preferenceClient.create({
       body: {
-        items: data.items.map(item => ({
+        items: data.items.map((item, index) => ({
+          id: `${data.orderId}-${index + 1}`,
           title: item.title,
           quantity: item.quantity,
           unit_price: item.unit_price,

@@ -8,7 +8,7 @@ async function main() {
     const getRandomTimestamp = (daysAgo: number, range: number = 1) => {
         const startTime = now - (daysAgo * 24 * 60 * 60 * 1000);
         const endTime = startTime + (range * 24 * 60 * 60 * 1000);
-        return Math.floor(startTime + Math.random() * (endTime - startTime));
+        return new Date(Math.floor(startTime + Math.random() * (endTime - startTime)));
     };
 
     const sampleMovements = [
