@@ -5,25 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { CheckCircle2, Clock, ChefHat, Package, CheckCheck, Search, Loader2, Truck, XCircle, CreditCard, MapPin, Bell } from "lucide-react";
+import { CheckCircle2, Clock, ChefHat, Package, CheckCheck, Search, Loader2, Truck, XCircle, CreditCard, MapPin, Bell, Flame, HelpCircle } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readLastOrder } from "@/lib/last-order";
+import { STATUS_FLOW, estimatedTimeText, getStatusMeta, isFinalStatus, type StatusIcon } from "@/lib/order-status";
 import { useSession } from "@/lib/auth-client";
 import { toast } from "sonner";
 import Image from "next/image";
 import NotificationSettings from "@/components/NotificationSettings";
-
-type OrderStatus = "pending_payment" | "confirmed" | "preparing" | "ready" | "out_for_delivery" | "delivered" | "cancelled";
-
-interface StatusConfig {
-  label: string;
-  progress: number;
-  icon: React.ReactNode;
-  color: string;
-  bgColor: string;
-  description: string;
-  getEstimatedTime: (createdAt: string) => string;
-}
 
 interface OrderItem {
   id: number;
@@ -40,102 +29,32 @@ interface Order {
   phone: string;
   deliveryAddress: string | null;
   total: number;
-  status: OrderStatus;
+  status: string;
   createdAt: string;
   updatedAt: string;
 }
 
-const calculateEstimatedTime = (createdAt: string, status: OrderStatus): string => {
-  const now = new Date();
-  const orderTime = new Date(createdAt);
-  const minutesElapsed = Math.floor((now.getTime() - orderTime.getTime()) / 60000);
-
-  switch (status) {
-    case "pending_payment":
-      return "Esperando confirmación de pago";
-    case "confirmed":
-      return "Iniciando preparación...";
-    case "preparing":
-      const prepTime = Math.max(0, 20 - minutesElapsed);
-      return prepTime > 0 ? `${prepTime} minutos aproximadamente` : "Casi listo para cocinar";
-    case "ready":
-      return "¡Tu pedido está listo para recoger!";
-    case "out_for_delivery":
-      const deliveryTime = Math.max(0, 30 - minutesElapsed);
-      return deliveryTime > 0 ? `${deliveryTime} minutos aproximadamente` : "Llegando pronto";
-    case "delivered":
-      return "Pedido entregado exitosamente";
-    case "cancelled":
-      return "Pedido cancelado";
-    default:
-      return "Calculando tiempo...";
-  }
+const STATUS_ICONS: Record<StatusIcon, React.ReactNode> = {
+  payment: <CreditCard className="w-6 h-6" />,
+  confirmed: <CheckCircle2 className="w-6 h-6" />,
+  chef: <ChefHat className="w-6 h-6" />,
+  flame: <Flame className="w-6 h-6" />,
+  package: <Package className="w-6 h-6" />,
+  ready: <CheckCheck className="w-6 h-6" />,
+  truck: <Truck className="w-6 h-6" />,
+  done: <CheckCircle2 className="w-6 h-6" />,
+  cancelled: <XCircle className="w-6 h-6" />,
+  unknown: <HelpCircle className="w-6 h-6" />,
 };
 
-const statusConfig: Record<OrderStatus, StatusConfig> = {
-  pending_payment: {
-    label: "Pendiente de Pago",
-    progress: 10,
-    icon: <CreditCard className="w-6 h-6" />,
-    color: "text-yellow-600",
-    bgColor: "bg-yellow-500",
-    description: "Esperando confirmación del pago",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "pending_payment"),
-  },
-  confirmed: {
-    label: "Confirmado",
-    progress: 20,
-    icon: <CheckCircle2 className="w-6 h-6" />,
-    color: "text-blue-600",
-    bgColor: "bg-blue-500",
-    description: "Tu pedido ha sido confirmado",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "confirmed"),
-  },
-  preparing: {
-    label: "En Preparación",
-    progress: 50,
-    icon: <ChefHat className="w-6 h-6" />,
-    color: "text-orange-600",
-    bgColor: "bg-[#FF6B35]",
-    description: "Estamos preparando tu pedido con cuidado",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "preparing"),
-  },
-  ready: {
-    label: "Listo",
-    progress: 75,
-    icon: <CheckCheck className="w-6 h-6" />,
-    color: "text-green-600",
-    bgColor: "bg-green-500",
-    description: "Tu pedido está listo para ser entregado",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "ready"),
-  },
-  out_for_delivery: {
-    label: "En Camino",
-    progress: 90,
-    icon: <Truck className="w-6 h-6" />,
-    color: "text-purple-600",
-    bgColor: "bg-purple-500",
-    description: "Tu pedido está en camino",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "out_for_delivery"),
-  },
-  delivered: {
-    label: "Entregado",
-    progress: 100,
-    icon: <CheckCircle2 className="w-6 h-6" />,
-    color: "text-green-600",
-    bgColor: "bg-green-500",
-    description: "Tu pedido ha sido entregado exitosamente",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "delivered"),
-  },
-  cancelled: {
-    label: "Cancelado",
-    progress: 0,
-    icon: <XCircle className="w-6 h-6" />,
-    color: "text-red-600",
-    bgColor: "bg-red-500",
-    description: "Este pedido ha sido cancelado",
-    getEstimatedTime: (createdAt) => calculateEstimatedTime(createdAt, "cancelled"),
-  },
+// Short labels for the progress bar under it
+const FLOW_SHORT_LABELS: Record<(typeof STATUS_FLOW)[number], string> = {
+  pending_payment: "Pago",
+  preparing: "Preparando",
+  cooking: "Cocinando",
+  packing: "Empacando",
+  ready: "Listo",
+  completed: "Completado",
 };
 
 export default function TrackingPage() {
@@ -196,7 +115,7 @@ export default function TrackingPage() {
 
         // Check if status changed
         if (updatedOrder.status !== order.status) {
-          toast.success(`Estado actualizado: ${statusConfig[updatedOrder.status as OrderStatus].label}`);
+          toast.success(`Estado actualizado: ${getStatusMeta(updatedOrder.status).label}`);
         }
 
         setOrder(updatedOrder);
@@ -279,7 +198,7 @@ export default function TrackingPage() {
 
   // Real-time polling for order updates (every 10 seconds)
   useEffect(() => {
-    if (!order || order.status === "delivered" || order.status === "cancelled") {
+    if (!order || isFinalStatus(order.status)) {
       return;
     }
 
@@ -295,8 +214,7 @@ export default function TrackingPage() {
     if (!order) return;
 
     const updateTime = () => {
-      const config = statusConfig[order.status];
-      setEstimatedTime(config.getEstimatedTime(order.createdAt));
+      setEstimatedTime(estimatedTimeText(order.status, order.createdAt));
     };
 
     updateTime();
@@ -430,7 +348,8 @@ export default function TrackingPage() {
 
   if (!order) return null;
 
-  const config = statusConfig[order.status];
+  const config = getStatusMeta(order.status);
+  const isFinal = isFinalStatus(order.status);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FF6B35] to-[#FF8E53] py-6 md:py-8 px-4">
@@ -482,7 +401,7 @@ export default function TrackingPage() {
 
         {/* Status Header with Animation - Optimizado Mobile First */}
         <div className="bg-white rounded-2xl md:rounded-3xl shadow-2xl p-6 md:p-8 mb-4 md:mb-6 relative overflow-hidden">
-          {order.status !== "cancelled" && order.status !== "delivered" && (
+          {!isFinal && (
             <div 
               className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"
               style={{
@@ -495,7 +414,7 @@ export default function TrackingPage() {
           <div className="relative text-center space-y-3 md:space-y-4">
             <div className="flex justify-center">
               <div className={`w-16 h-16 md:w-20 md:h-20 ${config.bgColor} rounded-full flex items-center justify-center shadow-lg animate-pulse`}>
-                <div className="text-white scale-75 md:scale-100">{config.icon}</div>
+                <div className="text-white scale-75 md:scale-100">{STATUS_ICONS[config.icon]}</div>
               </div>
             </div>
             <div>
@@ -509,7 +428,7 @@ export default function TrackingPage() {
               <p className="text-xl md:text-2xl font-bold text-[#FF6B35]">{order.orderNumber}</p>
             </div>
 
-            {order.status !== "cancelled" && order.status !== "delivered" && (
+            {!isFinal && (
               <div className="flex items-center justify-center gap-2 text-xs md:text-sm text-gray-500">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                 <span>Actualizando en tiempo real</span>
@@ -529,7 +448,7 @@ export default function TrackingPage() {
                 <div className="flex-1">
                   <p className="text-xs md:text-sm text-gray-600 mb-1">Tiempo Estimado</p>
                   <p className="text-lg md:text-xl font-bold text-gray-900">
-                    {estimatedTime || config.getEstimatedTime(order.createdAt)}
+                    {estimatedTime || estimatedTimeText(order.status, order.createdAt)}
                   </p>
                 </div>
               </div>
@@ -550,21 +469,14 @@ export default function TrackingPage() {
                 className="h-3 md:h-4 bg-gray-200"
               />
               <div className="flex justify-between text-[10px] md:text-xs text-gray-600">
-                <span className={order.status === "pending_payment" || order.status === "confirmed" ? "font-bold text-[#FF6B35]" : ""}>
-                  Confirmando
-                </span>
-                <span className={order.status === "preparing" ? "font-bold text-[#FF6B35]" : ""}>
-                  Preparando
-                </span>
-                <span className={order.status === "ready" ? "font-bold text-[#FF6B35]" : ""}>
-                  Listo
-                </span>
-                <span className={order.status === "out_for_delivery" ? "font-bold text-[#FF6B35]" : ""}>
-                  En Camino
-                </span>
-                <span className={order.status === "delivered" ? "font-bold text-green-600" : ""}>
-                  Entregado
-                </span>
+                {STATUS_FLOW.map((status) => (
+                  <span
+                    key={status}
+                    className={status === order.status ? (status === "completed" ? "font-bold text-green-600" : "font-bold text-[#FF6B35]") : ""}
+                  >
+                    {FLOW_SHORT_LABELS[status]}
+                  </span>
+                ))}
               </div>
             </div>
 
@@ -581,12 +493,11 @@ export default function TrackingPage() {
             <div className="mt-6 md:mt-8 space-y-3 md:space-y-4">
               <h3 className="font-semibold text-gray-900 mb-3 md:mb-4 text-sm md:text-base">Historial del Pedido</h3>
               <div className="space-y-2 md:space-y-3">
-                {Object.entries(statusConfig).map(([status, statusInfo]) => {
+                {STATUS_FLOW.map((status) => {
+                  const statusInfo = getStatusMeta(status);
                   const isActive = status === order.status;
                   const isPast = statusInfo.progress < config.progress;
-                  
-                  if (status === "cancelled") return null;
-                  
+
                   return (
                     <div 
                       key={status}
@@ -602,7 +513,7 @@ export default function TrackingPage() {
                         {isPast ? (
                           <CheckCircle2 className="w-4 h-4 md:w-5 md:h-5 text-white" />
                         ) : (
-                          <div className="text-white scale-[0.65] md:scale-75">{statusInfo.icon}</div>
+                          <div className="text-white scale-[0.65] md:scale-75">{STATUS_ICONS[statusInfo.icon]}</div>
                         )}
                       </div>
                       <div className="flex-1">
