@@ -27,10 +27,10 @@ export function useSession(): SessionData {
    const [isPending, setIsPending] = useState(true);
    const [error, setError] = useState<any>(null);
 
-   const refetch = () => {
+   const refetch = async () => {
       setIsPending(true);
       setError(null);
-      fetchSession();
+      await fetchSession();
    };
 
    const fetchSession = async () => {
@@ -57,5 +57,5 @@ export function useSession(): SessionData {
       fetchSession();
    }, []);
 
-   return { data: session, isPending, error, refetch };
+   return { data: session, isPending, isRefetching: isPending && session !== null, error, refetch };
 }

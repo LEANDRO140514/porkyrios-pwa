@@ -29,7 +29,8 @@ when confirmed project facts change.
 ## Constraints
 
 - Build needs `TURSO_CONNECTION_URL` at build time (the libsql client is created at module load); without it `next build` fails while collecting page data. `RESEND_API_KEY` is optional: the Resend client in `src/lib/resend.ts` is created lazily and `sendEmail` returns `success: false` when the key is missing.
-- `next.config.ts` sets `typescript.ignoreBuildErrors` and `eslint.ignoreDuringBuilds`, so a passing build does not mean types or lint are clean.
+- `next build` type-checks and lints the whole project (no `ignoreBuildErrors` / `ignoreDuringBuilds`); keep `npx tsc --noEmit` and `npm run lint` at zero errors.
+- Dynamic Drizzle queries that are reassigned (`query = query.where(...)`) must start with `.$dynamic()`.
 - Vitest also picks up the Playwright files in `src/test/e2e/*.spec.ts`, which fail under Vitest ("did not expect test.describe()").
 - Env vars reference: `.env.example` (never commit `.env*` files with real values).
 

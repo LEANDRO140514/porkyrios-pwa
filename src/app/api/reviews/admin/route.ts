@@ -63,7 +63,8 @@ export async function GET(request: NextRequest) {
       moderatedBy: reviews.moderatedBy,
     })
       .from(reviews)
-      .leftJoin(user, eq(reviews.userId, user.id));
+      .leftJoin(user, eq(reviews.userId, user.id))
+      .$dynamic();
 
     // Apply status filter if provided
     if (statusParam) {
@@ -101,7 +102,8 @@ export async function GET(request: NextRequest) {
 
     // Get total count with same filters
     let countQuery = db.select({ count: sql<number>`count(*)` })
-      .from(reviews);
+      .from(reviews)
+      .$dynamic();
 
     if (statusParam) {
       countQuery = countQuery.where(eq(reviews.status, statusParam));

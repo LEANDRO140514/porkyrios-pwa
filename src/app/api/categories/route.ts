@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') ?? '0');
     const search = searchParams.get('search');
 
-    let query = db.select().from(categories).orderBy(desc(categories.createdAt));
+    let query = db.select().from(categories).orderBy(desc(categories.createdAt)).$dynamic();
     if (search) {
       query = query.where(like(categories.name, `%${search}%`));
     }

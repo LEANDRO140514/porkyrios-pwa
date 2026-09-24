@@ -1872,12 +1872,7 @@ export default function AdminPanel() {
 
       // Send notifications
       if (updatedOrder.customerEmail) {
-        await notifyOrderStatusChange(
-          updatedOrder.orderNumber,
-          newStatus,
-          updatedOrder.customerEmail,
-          updatedOrder.customerName
-        );
+        await notifyOrderStatusChange(updatedOrder.orderNumber, newStatus);
       }
     } catch (error) {
       console.error("Error updating order status:", error);

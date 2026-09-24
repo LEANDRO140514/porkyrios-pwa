@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') ?? '0');
     const search = searchParams.get('search');
 
-    let query = db.select().from(coupons).orderBy(desc(coupons.createdAt));
+    let query = db.select().from(coupons).orderBy(desc(coupons.createdAt)).$dynamic();
 
     if (search) {
       query = query.where(like(coupons.code, `%${search.toUpperCase()}%`));

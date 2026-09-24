@@ -174,7 +174,7 @@ export function ShareButtons({
         </Button>
 
         {/* Native Share API for mobile */}
-        {typeof window !== "undefined" && navigator.share && (
+        {typeof window !== "undefined" && typeof navigator.share === "function" && (
           <Button
             onClick={handleNativeShare}
             size="sm"

@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status');
     const orderNumber = searchParams.get('orderNumber');
 
-    let query = db.select().from(orders);
+    let query = db.select().from(orders).$dynamic();
 
     const conditions = [];
 
