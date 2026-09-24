@@ -1,0 +1,52 @@
+{
+  "product": "slashstack",
+  "version": "0.6.0",
+  "target": "agents",
+  "tier": "pro",
+  "licenseFingerprint": "27adc50914722b2f6d8e712e7e1f44dea8ec8d7e0f6c95985682acc29e1e2ad7",
+  "kernelMode": "owned",
+  "kernelFile": "AGENTS.md",
+  "kernelFileCreated": true,
+  "managedSkills": [
+    "vibe",
+    "preflight",
+    "audit",
+    "remember",
+    "recall",
+    "improve",
+    "ship",
+    "execute",
+    "explain",
+    "next",
+    "security",
+    "factory",
+    "spawn",
+    "cost",
+    "new",
+    "forget",
+    "sync",
+    "mobile",
+    "health",
+    "senior"
+  ],
+  "managedGuards": [
+    "commit-guard",
+    "push-guard",
+    "install-guard",
+    "fragile-guard",
+    "env-guard",
+    "memory-nudge"
+  ],
+  "managedGuardRunner": ".agents/guards/run.js",
+  "managedGitHooks": [
+    "pre-commit",
+    "pre-push"
+  ],
+  "createdMemory": true,
+  "createdPatterns": true,
+  "createdGoalRegistry": true,
+  "createdCheckpoints": true,
+  "createdReferencesReadme": true,
+  "createdGoalTemplate": true,
+  "installedAt": "2026-09-24T06:19:32.788Z"
+}

@@ -16,7 +16,7 @@ import Image from "next/image";
 export default function PaymentPage() {
   const router = useRouter();
   const { data: session, isPending, refetch } = useSession();
-  const { cart, getTotal, getDeliveryCost, deliveryMethod, deliveryAddress, postalCode, validatedPostalCode, clearCart } = useCart();
+  const { cart, getTotal, getDeliveryCost, deliveryMethod, deliveryAddress, postalCode, validatedPostalCode, clearCart, isLoading: isCartLoading } = useCart();
   const [isLoading, setIsLoading] = useState(false);
   
   // Form state
@@ -52,8 +52,9 @@ export default function PaymentPage() {
 
   // Validation effect - runs in background without blocking UI
   useEffect(() => {
-    if (isPending) return;
-    
+    // Wait for the cart to load from localStorage; it starts empty
+    if (isPending || isCartLoading) return;
+
     // Validate cart is not empty
     if (cart.length === 0) {
       toast.error("Tu carrito está vacío");
@@ -75,7 +76,7 @@ export default function PaymentPage() {
         return;
       }
     }
-  }, [isPending, cart.length, deliveryMethod, deliveryAddress, postalCode, validatedPostalCode, router]);
+  }, [isPending, isCartLoading, cart.length, deliveryMethod, deliveryAddress, postalCode, validatedPostalCode, router]);
 
   const formatPhone = (value: string) => {
     return value.replace(/\D/g, "");

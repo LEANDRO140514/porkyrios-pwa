@@ -120,6 +120,8 @@ describe('PaymentPage Component', () => {
   });
 
   afterEach(() => {
+    // Never leak fake timers into later tests (their waitFor calls would hang)
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -132,7 +134,7 @@ describe('PaymentPage Component', () => {
   };
 
   describe('Authentication', () => {
-    it('should show loading spinner while checking session', () => {
+    it('should not redirect while session is pending', async () => {
       mockUseSession.mockReturnValue({
         data: null,
         isPending: true,
@@ -140,11 +142,13 @@ describe('PaymentPage Component', () => {
 
       renderPaymentPage();
 
-      const spinner = document.querySelector('.animate-spin');
-      expect(spinner).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByText('Resumen del Pedido')).toBeInTheDocument();
+      });
+      expect(mockPush).not.toHaveBeenCalled();
     });
 
-    it('should redirect to login if not authenticated', async () => {
+    it('should show inline login form if not authenticated', async () => {
       mockUseSession.mockReturnValue({
         data: null,
         isPending: false,
@@ -153,8 +157,11 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(mockPush).toHaveBeenCalledWith('/login?redirect=%2Fpayment');
-      }, { timeout: 5000 });
+        expect(screen.getByText('Completa tu Información')).toBeInTheDocument();
+        expect(screen.getByText('Inicia sesión para continuar')).toBeInTheDocument();
+        expect(screen.getByLabelText(/Contraseña/)).toBeInTheDocument();
+      });
+      expect(mockPush).not.toHaveBeenCalledWith(expect.stringContaining('/login'));
     });
 
     it('should render payment page when authenticated', async () => {
@@ -180,7 +187,7 @@ describe('PaymentPage Component', () => {
       }, { timeout: 5000 });
       
       // Now check for contact info section
-      expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+      expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
     });
   });
 
@@ -195,13 +202,27 @@ describe('PaymentPage Component', () => {
       }, { timeout: 5000 });
     });
 
-    it('should not render if cart is empty', async () => {
-      localStorage.setItem('porkyrios_cart', JSON.stringify([]));
+    it('should not redirect to menu while a saved cart is loading', async () => {
+      localStorage.setItem('porkyrios_cart', JSON.stringify([
+        { id: 1, name: 'Taco al Pastor', price: 25.0, stock: 10, quantity: 1, categoryId: 1, image: null },
+      ]));
 
-      const { container } = renderPaymentPage();
+      renderPaymentPage();
 
       await waitFor(() => {
-        expect(container.textContent).toBe('');
+        expect(screen.getByText('Taco al Pastor')).toBeInTheDocument();
+      });
+      expect(mockPush).not.toHaveBeenCalledWith('/menu');
+      expect(toast.error).not.toHaveBeenCalledWith('Tu carrito está vacío');
+    });
+
+    it('should warn the user if cart is empty', async () => {
+      localStorage.setItem('porkyrios_cart', JSON.stringify([]));
+
+      renderPaymentPage();
+
+      await waitFor(() => {
+        expect(toast.error).toHaveBeenCalledWith('Tu carrito está vacío');
       }, { timeout: 5000 });
     });
   });
@@ -315,7 +336,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
     });
 
@@ -323,7 +344,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        const nameInput = screen.getByLabelText('Nombre') as HTMLInputElement;
+        const nameInput = screen.getByLabelText(/Nombre de usuario/) as HTMLInputElement;
         expect(nameInput.value).toBe('Test User');
         expect(nameInput).toBeDisabled();
       }, { timeout: 5000 });
@@ -333,7 +354,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        const emailInput = screen.getByLabelText('Email') as HTMLInputElement;
+        const emailInput = screen.getByLabelText(/tu@email/) as HTMLInputElement;
         expect(emailInput.value).toBe('test@example.com');
         expect(emailInput).toBeDisabled();
       }, { timeout: 5000 });
@@ -353,7 +374,8 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('*', { selector: 'span.text-destructive' })).toBeInTheDocument();
+        // Every required field label has a red asterisk
+        expect(screen.getAllByText('*', { selector: 'span.text-destructive' }).length).toBeGreaterThan(0);
       }, { timeout: 5000 });
     });
 
@@ -362,7 +384,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/) as HTMLInputElement;
@@ -376,7 +398,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/) as HTMLInputElement;
@@ -389,7 +411,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Mínimo 10 dígitos')).toBeInTheDocument();
+        expect(screen.getByText('Para coordinar la entrega (mínimo 10 dígitos)')).toBeInTheDocument();
       }, { timeout: 5000 });
     });
   });
@@ -415,7 +437,7 @@ describe('PaymentPage Component', () => {
 
       await waitFor(() => {
         expect(screen.getByText('Pago seguro con MercadoPago')).toBeInTheDocument();
-        expect(screen.getByText('Acepta tarjetas de crédito, débito, y más métodos de pago')).toBeInTheDocument();
+        expect(screen.getByText('Tarjetas de crédito, débito y más métodos de pago')).toBeInTheDocument();
       }, { timeout: 5000 });
     });
 
@@ -433,15 +455,18 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
+
+      // The phone input is `required`, so the browser blocks submission while it is empty
+      const phoneInput = screen.getByLabelText(/Teléfono/);
+      expect(phoneInput).toBeRequired();
 
       const payButton = screen.getByRole('button', { name: /Pagar/i });
       await user.click(payButton);
 
-      await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Por favor ingresa un teléfono válido (mínimo 10 dígitos)');
-      }, { timeout: 5000 });
+      expect(phoneInput).toBeInvalid();
+      expect(global.fetch).not.toHaveBeenCalledWith('/api/orders', expect.anything());
     });
 
     it('should require minimum 10 digits for phone', async () => {
@@ -449,7 +474,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -496,7 +521,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -510,7 +535,7 @@ describe('PaymentPage Component', () => {
           '/api/orders',
           expect.objectContaining({
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
           })
         );
       }, { timeout: 5000 });
@@ -521,7 +546,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -545,7 +570,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -565,11 +590,14 @@ describe('PaymentPage Component', () => {
     });
 
     it('should show loading state during payment', async () => {
+      // Keep the order request pending so the loading state stays visible
+      (global.fetch as any).mockImplementation(() => new Promise(() => {}));
+
       const user = userEvent.setup();
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -585,11 +613,14 @@ describe('PaymentPage Component', () => {
     });
 
     it('should disable buttons during payment', async () => {
+      // Keep the order request pending so the loading state stays visible
+      (global.fetch as any).mockImplementation(() => new Promise(() => {}));
+
       const user = userEvent.setup();
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -613,7 +644,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -636,7 +667,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -649,18 +680,19 @@ describe('PaymentPage Component', () => {
         expect(toast.success).toHaveBeenCalled();
       }, { timeout: 5000 });
 
-      // Check cart is cleared
-      const savedCart = JSON.parse(localStorage.getItem('porkyrios_cart') || '[]');
-      expect(savedCart).toHaveLength(0);
+      // Cart is persisted to localStorage after the next render
+      await waitFor(() => {
+        const savedCart = JSON.parse(localStorage.getItem('porkyrios_cart') || '[]');
+        expect(savedCart).toHaveLength(0);
+      });
     });
 
     it('should redirect to tracking after payment', async () => {
-      vi.useFakeTimers();
-      const user = userEvent.setup({ delay: null });
+      const user = userEvent.setup();
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -673,14 +705,10 @@ describe('PaymentPage Component', () => {
         expect(toast.success).toHaveBeenCalled();
       }, { timeout: 5000 });
 
-      // Fast-forward time
-      vi.advanceTimersByTime(2000);
-
+      // Page redirects 2 seconds after opening MercadoPago
       await waitFor(() => {
         expect(mockPush).toHaveBeenCalledWith(expect.stringContaining('/tracking?order='));
       }, { timeout: 5000 });
-
-      vi.useRealTimers();
     });
   });
 
@@ -715,7 +743,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -756,7 +784,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -766,7 +794,7 @@ describe('PaymentPage Component', () => {
       await user.click(payButton);
 
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Error al crear la preferencia');
+        expect(toast.error).toHaveBeenCalledWith('Error al crear la preferencia de pago');
       }, { timeout: 5000 });
     });
 
@@ -779,7 +807,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const phoneInput = screen.getByLabelText(/Teléfono/);
@@ -820,18 +848,18 @@ describe('PaymentPage Component', () => {
       expect(screen.getByRole('button', { name: /Regresar al Carrito/i })).toBeInTheDocument();
     });
 
-    it('should navigate back when back button clicked', async () => {
+    it('should navigate to cart when back button clicked', async () => {
       const user = userEvent.setup();
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const backButton = screen.getByRole('button', { name: /Regresar al Carrito/i });
       await user.click(backButton);
 
-      expect(mockBack).toHaveBeenCalled();
+      expect(mockPush).toHaveBeenCalledWith('/cart');
     });
   });
 
@@ -877,7 +905,7 @@ describe('PaymentPage Component', () => {
       renderPaymentPage();
 
       await waitFor(() => {
-        expect(screen.getByText('Información de Contacto')).toBeInTheDocument();
+        expect(screen.getByText('Confirmar Datos')).toBeInTheDocument();
       }, { timeout: 5000 });
 
       const form = document.querySelector('form');

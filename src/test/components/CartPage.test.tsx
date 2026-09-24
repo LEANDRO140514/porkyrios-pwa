@@ -1,9 +1,11 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import CartPage from "@/app/cart/page";
 import { CartProvider } from "@/contexts/CartContext";
 import { useRouter } from "next/navigation";
 import { useSession } from "@/lib/auth-client";
+import { toast } from "sonner";
 
 // Mock dependencies
 vi.mock("next/navigation", () => ({
@@ -30,12 +32,15 @@ vi.mock('next/image', () => ({
 }));
 
 describe('CartPage Component', () => {
+  const mockPush = vi.fn();
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
+    (useRouter as any).mockReturnValue({ push: mockPush });
     
     // Default: authenticated user
-    useSession.mockReturnValue({
+    (useSession as any).mockReturnValue({
       data: {
         user: {
           id: 'user123',
@@ -56,16 +61,24 @@ describe('CartPage Component', () => {
   };
 
   describe('Authentication', () => {
-    it('should show loading spinner while checking session', () => {
+    // The cart is available to guests; login is not required
+    it('should render cart while session is pending', async () => {
       (useSession as any).mockReturnValue({ data: null, isPending: true, refetch: vi.fn() });
-      render(<CartPage />);
-      expect(screen.getByRole('status')).toBeInTheDocument();
+      renderCartPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('Tu carrito está vacío')).toBeInTheDocument();
+      });
     });
 
-    it('should redirect to login if not authenticated', () => {
+    it('should not redirect to login if not authenticated', async () => {
       (useSession as any).mockReturnValue({ data: null, isPending: false, refetch: vi.fn() });
-      render(<CartPage />);
-      expect(useRouter().push).toHaveBeenCalledWith('/login');
+      renderCartPage();
+
+      await waitFor(() => {
+        expect(screen.getByText('Tu carrito está vacío')).toBeInTheDocument();
+      });
+      expect(mockPush).not.toHaveBeenCalledWith('/login');
     });
 
     it('should render cart page when authenticated', async () => {
@@ -107,7 +120,7 @@ describe('CartPage Component', () => {
       const menuButton = screen.getByRole('button', { name: 'Ver Menú' });
       await user.click(menuButton);
 
-      expect(useRouter().push).toHaveBeenCalledWith('/menu');
+      expect(mockPush).toHaveBeenCalledWith('/menu');
     });
   });
 
@@ -158,8 +171,9 @@ describe('CartPage Component', () => {
       renderCartPage();
 
       await waitFor(() => {
+        // Unit price; $45.00 also appears as the line total (45 x 1)
         expect(screen.getByText('$25.00')).toBeInTheDocument();
-        expect(screen.getByText('$45.00')).toBeInTheDocument();
+        expect(screen.getAllByText('$45.00').length).toBeGreaterThan(0);
       });
     });
 
@@ -241,7 +255,6 @@ describe('CartPage Component', () => {
     });
 
     it('should update quantity with manual input', async () => {
-      const user = userEvent.setup();
       renderCartPage();
 
       await waitFor(() => {
@@ -249,8 +262,8 @@ describe('CartPage Component', () => {
       });
 
       const input = screen.getByRole('spinbutton');
-      await user.clear(input);
-      await user.type(input, '5');
+      // Controlled input ignores empty values, so set the new value directly
+      fireEvent.change(input, { target: { value: '5' } });
 
       await waitFor(() => {
         expect(input).toHaveValue(5);
@@ -459,7 +472,7 @@ describe('CartPage Component', () => {
       await user.click(deliveryButton!);
 
       await waitFor(() => {
-        expect(screen.getByText(/Tu pedido será entregado a domicilio en 15-20 minutos/i)).toBeInTheDocument();
+        expect(screen.getByText(/Tu pedido será entregado a domicilio en 30-35 minutos/i)).toBeInTheDocument();
       });
     });
 
@@ -598,10 +611,10 @@ describe('CartPage Component', () => {
       const continueButton = screen.getByRole('button', { name: /Seguir Comprando/i });
       await user.click(continueButton);
 
-      expect(useRouter().push).toHaveBeenCalledWith('/menu');
+      expect(mockPush).toHaveBeenCalledWith('/menu');
     });
 
-    it('should navigate to payment when "Proceder al Pago" clicked', async () => {
+    it('should navigate to payment when "Continuar al Pago" clicked', async () => {
       const user = userEvent.setup();
       renderCartPage();
 
@@ -609,10 +622,10 @@ describe('CartPage Component', () => {
         expect(screen.getByText('Taco al Pastor')).toBeInTheDocument();
       });
 
-      const checkoutButton = screen.getByRole('button', { name: /Proceder al Pago/i });
+      const checkoutButton = screen.getByRole('button', { name: /Continuar al Pago/i });
       await user.click(checkoutButton);
 
-      expect(useRouter().push).toHaveBeenCalledWith('/payment');
+      expect(mockPush).toHaveBeenCalledWith('/payment');
     });
 
     it('should not navigate to payment if cart is empty', async () => {
@@ -624,7 +637,7 @@ describe('CartPage Component', () => {
         expect(screen.getByText('Tu carrito está vacío')).toBeInTheDocument();
       });
 
-      expect(screen.queryByRole('button', { name: /Proceder al Pago/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Continuar al Pago/i })).not.toBeInTheDocument();
     });
   });
 
@@ -660,11 +673,11 @@ describe('CartPage Component', () => {
       });
     });
 
-    it('should display reservation info', async () => {
+    it('should display order processing info', async () => {
       renderCartPage();
 
       await waitFor(() => {
-        expect(screen.getByText('💡 Los productos se reservarán al confirmar el pago')).toBeInTheDocument();
+        expect(screen.getByText('💡 Tu pedido será procesado')).toBeInTheDocument();
       });
     });
 
