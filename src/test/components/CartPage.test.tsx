@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
 import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import CartPage from "@/app/cart/page";
 import { CartProvider } from "@/contexts/CartContext";
 import { useRouter } from "next/navigation";
