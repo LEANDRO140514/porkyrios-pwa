@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { orders } from '@/db/schema';
 import { sql, gte, eq, and } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const { searchParams } = new URL(request.url);
     const period = searchParams.get('period') || 'week';

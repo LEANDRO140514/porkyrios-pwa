@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireAdmin } from '@/lib/admin-auth';
 import { db } from '@/db';
-import { reviews, session } from '@/db/schema';
+import { reviews } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
 export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  const admin = await requireAdmin(request);
+  if (!admin.ok) {
+    return NextResponse.json(
+      { error: 'No autorizado', code: 'UNAUTHORIZED' },
+      { status: admin.status }
+    );
+  }
+
   try {
     // Extract and validate ID from route params
     const { id } = await context.params;
@@ -17,32 +26,7 @@ export async function PUT(
       );
     }
 
-    // Extract Bearer token from Authorization header
-    const authHeader = request.headers.get('Authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return NextResponse.json(
-        { error: 'No autorizado', code: 'UNAUTHORIZED' },
-        { status: 401 }
-      );
-    }
-
-    const token = authHeader.substring(7); // Remove "Bearer " prefix
-
-    // Query session table to authenticate
-    const sessionResult = await db
-      .select()
-      .from(session)
-      .where(eq(session.token, token))
-      .limit(1);
-
-    if (sessionResult.length === 0) {
-      return NextResponse.json(
-        { error: 'No autorizado', code: 'UNAUTHORIZED' },
-        { status: 401 }
-      );
-    }
-
-    const authenticatedUserId = sessionResult[0].userId;
+    const authenticatedUserId = admin.user.id;
 
     // Parse and validate request body
     const body = await request.json();

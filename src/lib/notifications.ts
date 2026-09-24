@@ -100,6 +100,41 @@ export async function notifyOrderStatusChange(
   return await sendPushNotification(notification);
 }
 
+export interface OrderStatusEmailData {
+  email: string;
+  orderNumber: string;
+  customerName: string;
+  status: string;
+}
+
+/**
+ * Send the order status update email to the customer via the API
+ */
+export async function sendOrderStatusEmail(data: OrderStatusEmailData): Promise<boolean> {
+  try {
+    // The route requires an admin session; send the better-auth bearer token
+    const token = typeof window !== 'undefined' ? localStorage.getItem('bearer_token') : null;
+    const response = await fetch('/api/emails/status-update', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      console.error('Failed to send status email:', await response.text());
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error sending status email:', error);
+    return false;
+  }
+}
+
 /**
  * Check if user has granted notification permission
  */

@@ -1,45 +1,51 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sendEmail } from '@/lib/resend';
+import { getOrderEmailData } from '@/lib/order-email';
 import OrderConfirmation from '@/emails/OrderConfirmation';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      email,
       orderNumber,
-      customerName,
-      items,
       subtotal,
       deliveryCost,
       iva,
-      total,
       deliveryMethod,
       estimatedDelivery,
     } = body;
 
     // Validar campos requeridos
-    if (!email || !orderNumber || !customerName || !items) {
+    if (!orderNumber || typeof orderNumber !== 'string') {
       return NextResponse.json(
         { error: 'Faltan campos requeridos' },
         { status: 400 }
       );
     }
 
+    // Recipient, name, items and total come from the database, never from the request
+    const order = await getOrderEmailData(orderNumber);
+    if (!order) {
+      return NextResponse.json(
+        { error: 'Pedido no encontrado' },
+        { status: 404 }
+      );
+    }
+
     // Enviar email de confirmación
     const result = await sendEmail({
-      to: email,
-      subject: `¡Pedido Confirmado! - ${orderNumber}`,
+      to: order.customerEmail,
+      subject: `¡Pedido Confirmado! - ${order.orderNumber}`,
       react: OrderConfirmation({
-        orderNumber,
-        customerName,
-        items,
-        subtotal,
-        deliveryCost,
-        iva,
-        total,
-        deliveryMethod,
-        estimatedDelivery,
+        orderNumber: order.orderNumber,
+        customerName: order.customerName,
+        items: order.items,
+        subtotal: Number(subtotal) || 0,
+        deliveryCost: Number(deliveryCost) || 0,
+        iva: Number(iva) || 0,
+        total: order.total,
+        deliveryMethod: deliveryMethod === 'delivery' ? 'delivery' : 'pickup',
+        estimatedDelivery: typeof estimatedDelivery === 'string' ? estimatedDelivery : '',
       }),
     });
 

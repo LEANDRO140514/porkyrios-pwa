@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { inventoryMovements, products } from '@/db/schema';
 import { eq, and, gte, lte, desc } from 'drizzle-orm';
@@ -7,6 +8,9 @@ const VALID_TYPES = ['addition', 'reduction', 'adjustment', 'sale', 'return'] as
 type MovementType = typeof VALID_TYPES[number];
 
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { productId, type, quantity, reason, orderId, createdBy } = body;
@@ -156,6 +160,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const searchParams = request.nextUrl.searchParams;
     const productId = searchParams.get('productId');

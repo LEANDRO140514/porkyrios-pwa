@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { promotionalBanner } from '@/db/schema';
 import { eq } from 'drizzle-orm';
@@ -24,6 +25,9 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { title, description, couponCode, active } = body;

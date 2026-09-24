@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { promotionalBanner } from '@/db/schema';
 import { eq, ne } from 'drizzle-orm';
@@ -7,6 +8,9 @@ export async function PUT(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const { id } = await context.params;
 
@@ -81,6 +85,9 @@ export async function DELETE(
   request: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const { id } = await context.params;
 

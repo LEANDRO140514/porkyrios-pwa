@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { adminOnly } from '@/lib/admin-auth';
 import { writeFile, mkdir, unlink, access } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
@@ -6,6 +7,9 @@ import path from "path";
 const UPLOADS_DIR = path.join(process.cwd(), "public", "uploads");
 
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const formData = await request.formData();
     const file = formData.get("file") as File;
@@ -61,6 +65,9 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const publicId = request.nextUrl.searchParams.get("publicId");
 

@@ -46,11 +46,10 @@ import {
   Plug2,
   CheckCircle2,
   AlertCircle,
-  Eye,
-  EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
-import { notifyOrderStatusChange } from "@/lib/notifications";
+import { notifyOrderStatusChange, sendOrderStatusEmail } from "@/lib/notifications";
+import { authClient, useSession } from "@/lib/auth-client";
 import { optimizeImage } from "@/lib/image-optimizer";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -239,17 +238,10 @@ type PromotionalBanner = {
 
 export default function AdminPanel() {
   const router = useRouter();
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem("admin_auth") === "PORKYRIOS2025";
-    }
-    return false;
-  });
-  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  // Access requires a better-auth session whose email is in ADMIN_EMAILS (checked on the server)
+  const { data: session, isPending: isSessionPending } = useSession();
+  const [adminStatus, setAdminStatus] = useState<"checking" | "admin" | "forbidden" | "anonymous">("checking");
+  const isAuthenticated = adminStatus === "admin";
   const [activeTab, setActiveTab] = useState<"dashboard" | "categories" | "products" | "orders" | "coupons" | "inventory" | "postal-codes" | "reviews" | "promotions" | "integrations">("dashboard");
 
   // GHL Integration state
@@ -389,10 +381,17 @@ export default function AdminPanel() {
     const [trackingSectionEnabled, setTrackingSectionEnabled] = useState(true);
     const [isUpdatingTrackingSetting, setIsUpdatingTrackingSetting] = useState(false);
 
-  // Verificación inicial completa
   useEffect(() => {
-    setIsCheckingAuth(false);
-  }, []);
+    if (isSessionPending) return;
+    if (!session?.user) {
+      setAdminStatus("anonymous");
+      return;
+    }
+    const token = localStorage.getItem("bearer_token");
+    fetch("/api/admin/me", { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((res) => setAdminStatus(res.ok ? "admin" : res.status === 403 ? "forbidden" : "anonymous"))
+      .catch(() => setAdminStatus("anonymous"));
+  }, [isSessionPending, session]);
 
   // Fetch data based on active tab
   useEffect(() => {
@@ -1039,27 +1038,10 @@ export default function AdminPanel() {
     return date.toLocaleDateString();
   };
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-    setError("");
-
-    setTimeout(() => {
-      if (password === "PORKYRIOS2025") {
-        sessionStorage.setItem("admin_auth", "PORKYRIOS2025");
-        setIsAuthenticated(true);
-      } else {
-        setError("❌ Contraseña incorrecta");
-      }
-      setIsLoading(false);
-    }, 500);
-  };
-
-  const handleLogout = () => {
-    sessionStorage.removeItem("admin_auth");
-    setIsAuthenticated(false);
-    setPassword("");
-    setActiveTab("dashboard");
+  const handleLogout = async () => {
+    await authClient.signOut();
+    localStorage.removeItem("bearer_token");
+    router.push("/");
   };
 
   const handleImageUpload = async (
@@ -1872,7 +1854,18 @@ export default function AdminPanel() {
 
       // Send notifications
       if (updatedOrder.customerEmail) {
-        await notifyOrderStatusChange(updatedOrder.orderNumber, newStatus);
+        const [, emailSent] = await Promise.all([
+          notifyOrderStatusChange(updatedOrder.orderNumber, newStatus),
+          sendOrderStatusEmail({
+            email: updatedOrder.customerEmail,
+            orderNumber: updatedOrder.orderNumber,
+            customerName: updatedOrder.customerName || "Cliente",
+            status: newStatus,
+          }),
+        ]);
+        if (!emailSent) {
+          toast.error("No se pudo enviar el email al cliente");
+        }
       }
     } catch (error) {
       console.error("Error updating order status:", error);
@@ -1933,7 +1926,7 @@ export default function AdminPanel() {
   const preparingCount = orders.filter(o => ["preparing", "cooking", "packing"].includes(o.status)).length;
   const completedToday = todayOrders.filter(o => o.status === "completed").length;
 
-  // Login Screen - Optimizado Mobile First
+  // Access screen - Optimizado Mobile First
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center p-3 md:p-4">
@@ -1954,55 +1947,41 @@ export default function AdminPanel() {
               </p>
             </div>
 
-            <form onSubmit={handleLogin} className="space-y-3 md:space-y-4">
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Ingresa la contraseña secreta"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="bg-gray-700 border-gray-600 text-white placeholder:text-gray-400 text-center text-base md:text-lg h-11 md:h-12 pr-10"
-                  autoFocus
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200"
-                  tabIndex={-1}
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
+            {adminStatus === "checking" ? (
+              <div className="flex justify-center py-2">
+                <Loader2 className="w-8 h-8 animate-spin text-[#FF6B35]" />
               </div>
-
-              {error && (
-                <div className="text-red-400 text-xs md:text-sm font-medium">
-                  {error}
-                </div>
-              )}
-
-              <Button
-                type="submit"
-                className="w-full bg-[#FF6B35] hover:bg-[#FF8E53] text-white font-bold py-2.5 md:py-3 text-base md:text-lg h-auto"
-                disabled={isLoading || !password}
-              >
-                {isLoading ? "Verificando..." : "🔓 Acceder"}
-              </Button>
-
+            ) : adminStatus === "forbidden" ? (
+              <div className="space-y-3 md:space-y-4">
+                <p className="text-red-400 text-xs md:text-sm font-medium">
+                  ❌ La cuenta {session?.user?.email} no tiene acceso de administrador
+                </p>
+                <Button
+                  type="button"
+                  className="w-full bg-[#FF6B35] hover:bg-[#FF8E53] text-white font-bold py-2.5 md:py-3 text-base md:text-lg h-auto"
+                  onClick={handleLogout}
+                >
+                  Cerrar sesión
+                </Button>
+              </div>
+            ) : (
               <Button
                 type="button"
-                variant="ghost"
-                className="w-full text-gray-400 hover:text-white text-sm md:text-base h-10 md:h-11"
-                onClick={() => router.push("/")}
+                className="w-full bg-[#FF6B35] hover:bg-[#FF8E53] text-white font-bold py-2.5 md:py-3 text-base md:text-lg h-auto"
+                onClick={() => router.push("/login?redirect=/admin")}
               >
-                ← Volver al inicio
+                🔓 Iniciar sesión
               </Button>
-            </form>
+            )}
 
-            <div className="pt-3 md:pt-4 border-t border-gray-700">
-              <p className="text-[10px] md:text-xs text-gray-500 text-center">
-                💡 Pista: Triple click en el logo o usa el Konami Code
-              </p>
-            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full text-gray-400 hover:text-white text-sm md:text-base h-10 md:h-11"
+              onClick={() => router.push("/")}
+            >
+              ← Volver al inicio
+            </Button>
           </div>
         </Card>
       </div>

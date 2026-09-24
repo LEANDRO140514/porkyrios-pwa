@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
 import { orders, products } from '@/db/schema';
 import { sql, eq, lte, notInArray } from 'drizzle-orm';
 
 export async function GET(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     // Execute all queries in parallel for optimal performance
     const [
