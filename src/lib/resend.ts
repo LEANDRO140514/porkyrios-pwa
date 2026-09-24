@@ -1,10 +1,16 @@
 import { Resend } from 'resend';
 
-if (!process.env.RESEND_API_KEY) {
-  console.warn('⚠️ RESEND_API_KEY no está configurado. Los emails no se enviarán.');
-}
+// Created on first use: `new Resend()` throws without an API key, which
+// would break `next build` when RESEND_API_KEY is not set.
+let resendClient: Resend | null = null;
 
-export const resend = new Resend(process.env.RESEND_API_KEY || '');
+function getResend(): Resend | null {
+  if (!process.env.RESEND_API_KEY) {
+    return null;
+  }
+  resendClient ??= new Resend(process.env.RESEND_API_KEY);
+  return resendClient;
+}
 
 // Helper function para enviar emails con manejo de errores
 export async function sendEmail({
@@ -18,6 +24,12 @@ export async function sendEmail({
   react: React.ReactElement;
   from?: string;
 }) {
+  const resend = getResend();
+  if (!resend) {
+    console.warn('⚠️ RESEND_API_KEY no está configurado. Los emails no se enviarán.');
+    return { success: false, error: new Error('RESEND_API_KEY no está configurado') };
+  }
+
   try {
     const { data, error } = await resend.emails.send({
       from,
