@@ -35,6 +35,7 @@ when confirmed project facts change.
 - Admin = a better-auth session (cookie or Bearer token) whose email is in `ADMIN_EMAILS`. API routes guard with `adminOnly`/`requireAdmin` from `src/lib/admin-auth.ts`; `/admin` checks `GET /api/admin/me`. Covered by `src/test/unit/admin-routes.test.ts` — add new admin routes there.
 - `public/sw.js` must never cache `/api/*` (per-user and live data); bump `CACHE_NAME` when changing what it caches.
 - Customers track orders only via `POST /api/orders/track` (order number + phone, see `src/lib/order-tracking.ts`); `GET /api/orders` and `GET /api/orders/items` are admin-only. The payment page stores `{orderNumber, phone}` via `src/lib/last-order.ts` so `/tracking?order=` can auto-track.
+- Customers create orders only via `POST /api/checkout` (logic in `src/lib/checkout.ts`): the browser sends product ids/quantities and choices; prices, stock, delivery cost, coupon and total come from the database, in one transaction. `POST /api/orders` and `POST /api/orders/items` are admin-only. `/api/payment/preference` charges the stored order total. Coupon rules live in `src/lib/coupons.ts`; a use is counted at checkout, not when validating. Orders do not decrement stock.
 - Emails to customers take the recipient from the order in the database (`getOrderEmailData` in `src/lib/order-email.ts`), never from the request body.
 - Env vars reference: `.env.example` (never commit `.env*` files with real values).
 

@@ -95,6 +95,8 @@ const adminOnly: [string, string, string?][] = [
   ['orders', 'GET', '?id=1'],
   ['orders', 'GET', '?orderNumber=PK-12345'],
   ['orders/items', 'GET', '?orderId=1'],
+  ['orders', 'POST'],
+  ['orders/items', 'POST'],
 ];
 
 const publicCalls: [string, string, string][] = [

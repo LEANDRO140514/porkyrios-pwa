@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminOnly } from '@/lib/admin-auth';
 import { db } from '@/db';
-import { orders, settings } from '@/db/schema';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { orders } from '@/db/schema';
+import { eq, and, desc } from 'drizzle-orm';
 import * as Sentry from '@sentry/nextjs';
-import { syncOrderToGHL } from '@/lib/ghl';
+import { syncNewOrderToGHL } from '@/lib/ghl-sync';
 
 const VALID_STATUSES = ['pending_payment', 'preparing', 'cooking', 'packing', 'ready', 'completed', 'cancelled'];
 
@@ -99,7 +99,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// Admin-only: customers create orders through POST /api/checkout
 export async function POST(request: NextRequest) {
+  const denied = await adminOnly(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { orderNumber, customerName, customerEmail, phone, deliveryAddress, total, status } = body;
@@ -187,30 +191,14 @@ export async function POST(request: NextRequest) {
       })
       .returning();
 
-    // ── GHL sync (non-blocking) ──────────────────────────────────
-    try {
-      const ghlRows = await db
-        .select()
-        .from(settings)
-        .where(inArray(settings.key, ['ghl_enabled', 'ghl_api_key', 'ghl_location_id']));
-
-      const ghlMap: Record<string, string> = {};
-      for (const row of ghlRows) ghlMap[row.key] = row.value;
-
-      if (ghlMap['ghl_enabled'] === 'true' && ghlMap['ghl_api_key'] && ghlMap['ghl_location_id']) {
-        void syncOrderToGHL(ghlMap['ghl_api_key'], ghlMap['ghl_location_id'], {
-          name: customerName,
-          email: customerEmail,
-          phone: phone,
-          orderNumber: orderNumber,
-          total: total,
-          deliveryAddress: deliveryAddress || null,
-        });
-      }
-    } catch (ghlError) {
-      console.error('[GHL] Error loading settings (non-blocking):', ghlError);
-    }
-    // ─────────────────────────────────────────────────────────────
+    void syncNewOrderToGHL({
+      name: customerName,
+      email: customerEmail,
+      phone: phone,
+      orderNumber: orderNumber,
+      total: total,
+      deliveryAddress: deliveryAddress || null,
+    });
 
     return NextResponse.json(newOrder[0], { status: 201 });
   } catch (error) {

@@ -92,16 +92,19 @@ describe('PaymentPage Component', () => {
 
     // Mock successful API responses
     (global.fetch as any).mockImplementation((url: string) => {
-      if (url.includes('/api/orders') && !url.includes('/items')) {
+      if (url.includes('/api/checkout')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ id: 1, orderNumber: 'PK-12345' }),
-        });
-      }
-      if (url.includes('/api/orders/items')) {
-        return Promise.resolve({
-          ok: true,
-          json: () => Promise.resolve({ id: 1 }),
+          json: () => Promise.resolve({
+            orderId: 1,
+            orderNumber: 'PK-12345',
+            items: [{ name: 'Taco al Pastor', quantity: 2, price: 25 }],
+            subtotal: 50,
+            iva: 8,
+            deliveryCost: 0,
+            discount: 0,
+            total: 58,
+          }),
         });
       }
       if (url.includes('/api/payment/preference')) {
@@ -516,7 +519,7 @@ describe('PaymentPage Component', () => {
       });
     });
 
-    it('should create order on payment submission', async () => {
+    it('should create the order through /api/checkout', async () => {
       const user = userEvent.setup();
       renderPaymentPage();
 
@@ -532,16 +535,21 @@ describe('PaymentPage Component', () => {
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
-          '/api/orders',
+          '/api/checkout',
           expect.objectContaining({
             method: 'POST',
             headers: expect.objectContaining({ 'Content-Type': 'application/json' }),
           })
         );
       }, { timeout: 5000 });
+
+      // The old per-item endpoints are no longer used
+      const urls = (global.fetch as any).mock.calls.map((c: unknown[]) => c[0]);
+      expect(urls).not.toContain('/api/orders');
+      expect(urls).not.toContain('/api/orders/items');
     });
 
-    it('should create order items', async () => {
+    it('should send only product ids and quantities, never prices or totals', async () => {
       const user = userEvent.setup();
       renderPaymentPage();
 
@@ -556,16 +564,18 @@ describe('PaymentPage Component', () => {
       await user.click(payButton);
 
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          '/api/orders/items',
-          expect.objectContaining({
-            method: 'POST',
-          })
-        );
+        expect(global.fetch).toHaveBeenCalledWith('/api/checkout', expect.anything());
       }, { timeout: 5000 });
+
+      const call = (global.fetch as any).mock.calls.find((c: unknown[]) => c[0] === '/api/checkout');
+      const body = JSON.parse(call[1].body);
+      expect(body.items).toEqual([{ productId: 1, quantity: 2 }]);
+      expect(body.phone).toBe('1234567890');
+      expect(body).not.toHaveProperty('total');
+      expect(JSON.stringify(body.items)).not.toContain('price');
     });
 
-    it('should create MercadoPago preference', async () => {
+    it('should create the MercadoPago preference from the order number only', async () => {
       const user = userEvent.setup();
       renderPaymentPage();
 
@@ -580,13 +590,13 @@ describe('PaymentPage Component', () => {
       await user.click(payButton);
 
       await waitFor(() => {
-        expect(global.fetch).toHaveBeenCalledWith(
-          '/api/payment/preference',
-          expect.objectContaining({
-            method: 'POST',
-          })
-        );
+        expect(global.fetch).toHaveBeenCalledWith('/api/payment/preference', expect.anything());
       }, { timeout: 5000 });
+
+      const call = (global.fetch as any).mock.calls.find((c: unknown[]) => c[0] === '/api/payment/preference');
+      const body = JSON.parse(call[1].body);
+      expect(body.externalReference).toBe('PK-12345');
+      expect(body).not.toHaveProperty('price');
     });
 
     it('should show loading state during payment', async () => {
@@ -728,12 +738,12 @@ describe('PaymentPage Component', () => {
       localStorage.setItem('porkyrios_cart', JSON.stringify(mockCart));
     });
 
-    it('should handle order creation error', async () => {
+    it('should show the server error when the order cannot be created (e.g. stock)', async () => {
       (global.fetch as any).mockImplementation((url: string) => {
-        if (url.includes('/api/orders')) {
+        if (url.includes('/api/checkout')) {
           return Promise.resolve({
             ok: false,
-            json: () => Promise.resolve({ error: 'Error al crear la orden' }),
+            json: () => Promise.resolve({ error: 'Solo quedan 1 de Taco al Pastor', code: 'INSUFFICIENT_STOCK' }),
           });
         }
         return Promise.resolve({ ok: true, json: () => Promise.resolve({}) });
@@ -753,22 +763,25 @@ describe('PaymentPage Component', () => {
       await user.click(payButton);
 
       await waitFor(() => {
-        expect(toast.error).toHaveBeenCalledWith('Error al crear la orden');
+        expect(toast.error).toHaveBeenCalledWith('Solo quedan 1 de Taco al Pastor');
       }, { timeout: 5000 });
     });
 
     it('should handle preference creation error', async () => {
       (global.fetch as any).mockImplementation((url: string) => {
-        if (url.includes('/api/orders') && !url.includes('/items')) {
+        if (url.includes('/api/checkout')) {
           return Promise.resolve({
             ok: true,
-            json: () => Promise.resolve({ id: 1, orderNumber: 'PK-12345' }),
-          });
-        }
-        if (url.includes('/api/orders/items')) {
-          return Promise.resolve({
-            ok: true,
-            json: () => Promise.resolve({ id: 1 }),
+            json: () => Promise.resolve({
+              orderId: 1,
+              orderNumber: 'PK-12345',
+              items: [{ name: 'Taco al Pastor', quantity: 2, price: 25 }],
+              subtotal: 50,
+              iva: 8,
+              deliveryCost: 0,
+              discount: 0,
+              total: 58,
+            }),
           });
         }
         if (url.includes('/api/payment/preference')) {
