@@ -74,12 +74,32 @@ vi.mock('sonner', () => ({
   },
 }));
 
-// Mock fetch globally
-global.fetch = vi.fn();
+// Mock fetch globally. /api/checkout/quote is priced like the server does
+// (database prices, 16% IVA); every other call goes to apiMock, which each test configures.
+const PRICES: Record<number, number> = { 1: 25, 2: 45 };
+const apiMock = vi.fn();
+const quoteResponse = (init?: RequestInit) => {
+  const { items } = JSON.parse(String(init?.body ?? '{}'));
+  const lines = items.map((i: { productId: number; quantity: number }) => ({
+    productId: i.productId, name: `Product ${i.productId}`, quantity: i.quantity, price: PRICES[i.productId],
+  }));
+  const subtotal = lines.reduce((sum: number, l: { price: number; quantity: number }) => sum + l.price * l.quantity, 0);
+  const iva = Math.round(subtotal * 16) / 100;
+  return Promise.resolve({
+    ok: true,
+    json: () => Promise.resolve({ items: lines, subtotal, iva, deliveryCost: 0, discount: 0, total: subtotal + iva }),
+  });
+};
+const defaultFetch = (url: string, init?: RequestInit) =>
+  url === '/api/checkout/quote' ? quoteResponse(init) : apiMock(url, init);
+const fetchMock = vi.fn(defaultFetch);
+global.fetch = fetchMock as any;
 
 describe('PaymentPage Component', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    fetchMock.mockImplementation(defaultFetch);
+    global.fetch = fetchMock as any;
     mockPush.mockClear();
     mockBack.mockClear();
     localStorage.clear();
@@ -91,7 +111,7 @@ describe('PaymentPage Component', () => {
     });
 
     // Mock successful API responses
-    (global.fetch as any).mockImplementation((url: string) => {
+    apiMock.mockImplementation((url: string) => {
       if (url.includes('/api/checkout')) {
         return Promise.resolve({
           ok: true,
@@ -419,6 +439,43 @@ describe('PaymentPage Component', () => {
     });
   });
 
+  describe('Server-calculated total', () => {
+    it('shows the total from the server, not the prices stored in the cart', async () => {
+      // Stale or tampered cart price: 0.01 instead of 25
+      localStorage.setItem('porkyrios_cart', JSON.stringify([
+        { id: 1, name: 'Taco al Pastor', price: 0.01, stock: 10, quantity: 2, categoryId: 1, image: null },
+      ]));
+
+      renderPaymentPage();
+
+      // 2 x 25 = 50, IVA 8, total 58
+      expect(await screen.findByRole('button', { name: /Pagar \$58\.00 con MercadoPago/i })).toBeEnabled();
+      expect(screen.getByText('$25.00 x 2')).toBeInTheDocument();
+      expect(screen.getAllByText('$50.00').length).toBeGreaterThan(0);
+      expect(screen.queryByText(/0\.01|0\.02/)).not.toBeInTheDocument();
+
+      const quoteCall = fetchMock.mock.calls.find(([url]) => url === '/api/checkout/quote');
+      expect(JSON.parse(String(quoteCall![1]!.body))).toMatchObject({ items: [{ productId: 1, quantity: 2 }] });
+    });
+
+    it('shows the server error and blocks payment when the cart cannot be priced', async () => {
+      localStorage.setItem('porkyrios_cart', JSON.stringify([
+        { id: 1, name: 'Taco al Pastor', price: 25, stock: 10, quantity: 5, categoryId: 1, image: null },
+      ]));
+      fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+        url === '/api/checkout/quote'
+          ? Promise.resolve({ ok: false, json: () => Promise.resolve({ error: 'Solo quedan 3 de Taco al Pastor', code: 'INSUFFICIENT_STOCK' }) })
+          : apiMock(url, init)
+      );
+
+      renderPaymentPage();
+
+      expect(await screen.findByRole('alert')).toHaveTextContent('Solo quedan 3 de Taco al Pastor');
+      expect(screen.getByRole('button', { name: /Revisa tu pedido/i })).toBeDisabled();
+      expect(screen.queryByRole('button', { name: /Pagar \$/i })).not.toBeInTheDocument();
+    });
+  });
+
   describe('MercadoPago Integration', () => {
     beforeEach(() => {
       const mockCart = [
@@ -465,7 +522,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       expect(phoneInput).toBeRequired();
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       expect(phoneInput).toBeInvalid();
@@ -483,7 +540,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '123456789'); // Only 9 digits
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -530,7 +587,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -560,7 +617,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -586,7 +643,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -601,7 +658,7 @@ describe('PaymentPage Component', () => {
 
     it('should show loading state during payment', async () => {
       // Keep the order request pending so the loading state stays visible
-      (global.fetch as any).mockImplementation(() => new Promise(() => {}));
+      apiMock.mockImplementation(() => new Promise(() => {}));
 
       const user = userEvent.setup();
       renderPaymentPage();
@@ -613,7 +670,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       // Check for loading state
@@ -624,7 +681,7 @@ describe('PaymentPage Component', () => {
 
     it('should disable buttons during payment', async () => {
       // Keep the order request pending so the loading state stays visible
-      (global.fetch as any).mockImplementation(() => new Promise(() => {}));
+      apiMock.mockImplementation(() => new Promise(() => {}));
 
       const user = userEvent.setup();
       renderPaymentPage();
@@ -636,7 +693,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -660,7 +717,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -683,7 +740,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -708,7 +765,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -739,7 +796,7 @@ describe('PaymentPage Component', () => {
     });
 
     it('should show the server error when the order cannot be created (e.g. stock)', async () => {
-      (global.fetch as any).mockImplementation((url: string) => {
+      apiMock.mockImplementation((url: string) => {
         if (url.includes('/api/checkout')) {
           return Promise.resolve({
             ok: false,
@@ -759,7 +816,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -768,7 +825,7 @@ describe('PaymentPage Component', () => {
     });
 
     it('should handle preference creation error', async () => {
-      (global.fetch as any).mockImplementation((url: string) => {
+      apiMock.mockImplementation((url: string) => {
         if (url.includes('/api/checkout')) {
           return Promise.resolve({
             ok: true,
@@ -803,7 +860,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -812,7 +869,7 @@ describe('PaymentPage Component', () => {
     });
 
     it('should handle network error', async () => {
-      (global.fetch as any).mockImplementation(() => {
+      apiMock.mockImplementation(() => {
         return Promise.reject(new Error('Network error'));
       });
 
@@ -826,7 +883,7 @@ describe('PaymentPage Component', () => {
       const phoneInput = screen.getByLabelText(/Teléfono/);
       await user.type(phoneInput, '1234567890');
 
-      const payButton = screen.getByRole('button', { name: /Pagar/i });
+      const payButton = await screen.findByRole('button', { name: /Pagar \$/i });
       await user.click(payButton);
 
       await waitFor(() => {
@@ -899,6 +956,8 @@ describe('PaymentPage Component', () => {
         expect(screen.getByText('Resumen del Pedido')).toBeInTheDocument();
       }, { timeout: 5000 });
 
+      // The credit card icon is on the pay button, shown once the server total arrives
+      await screen.findByRole('button', { name: /Pagar \$/i });
       const icons = document.querySelectorAll('.lucide-credit-card');
       expect(icons.length).toBeGreaterThan(0);
     });

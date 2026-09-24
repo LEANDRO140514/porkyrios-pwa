@@ -36,8 +36,11 @@ export type PricedCart = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Validate the raw request body; quantities for the same product are merged. */
-export function parseCheckoutInput(body: unknown): CheckoutInput {
+/**
+ * Validate the raw request body; quantities for the same product are merged.
+ * For a quote only the parts that affect the price are required (no phone or address).
+ */
+export function parseCheckoutInput(body: unknown, { forQuote = false } = {}): CheckoutInput {
   const b = (body ?? {}) as Record<string, unknown>;
 
   if (!Array.isArray(b.items) || b.items.length === 0) {
@@ -62,12 +65,12 @@ export function parseCheckoutInput(body: unknown): CheckoutInput {
   const str = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
   const deliveryAddress = str(b.deliveryAddress);
   const postalCode = str(b.postalCode);
-  if (deliveryMethod === 'delivery' && (!deliveryAddress || !postalCode)) {
+  if (deliveryMethod === 'delivery' && (!postalCode || (!forQuote && !deliveryAddress))) {
     throw new CheckoutError('MISSING_DELIVERY_INFO', 'Falta la dirección o el código postal de entrega');
   }
 
   const phone = typeof b.phone === 'string' ? b.phone.trim() : '';
-  if (normalizePhone(phone).length < 10) {
+  if (!forQuote && normalizePhone(phone).length < 10) {
     throw new CheckoutError('INVALID_PHONE', 'Por favor ingresa un teléfono válido (mínimo 10 dígitos)');
   }
 
@@ -135,13 +138,11 @@ async function generateOrderNumber(): Promise<string> {
 }
 
 /**
- * Create the order and its items in one transaction, with every amount
- * computed on the server. The customer's name and email come from the session.
+ * Price a cart with database data only, without creating anything. Used both
+ * to show the total before paying and by createCheckoutOrder, so the amount
+ * shown and the amount charged come from the same calculation.
  */
-export async function createCheckoutOrder(
-  input: CheckoutInput,
-  customer: { name: string; email: string }
-) {
+export async function quoteCheckout(input: CheckoutInput): Promise<{ priced: PricedCart; coupon: Coupon | null }> {
   const productRows = await db
     .select()
     .from(products)
@@ -173,7 +174,18 @@ export async function createCheckoutOrder(
     coupon = found;
   }
 
-  const priced = priceCart(input.items, productRows, deliveryCost, coupon);
+  return { priced: priceCart(input.items, productRows, deliveryCost, coupon), coupon };
+}
+
+/**
+ * Create the order and its items in one transaction, with every amount
+ * computed on the server. The customer's name and email come from the session.
+ */
+export async function createCheckoutOrder(
+  input: CheckoutInput,
+  customer: { name: string; email: string }
+) {
+  const { priced, coupon } = await quoteCheckout(input);
   const orderNumber = await generateOrderNumber();
   const now = new Date().toISOString();
 

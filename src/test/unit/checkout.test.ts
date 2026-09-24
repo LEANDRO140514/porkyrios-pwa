@@ -159,3 +159,62 @@ describe('POST /api/checkout', () => {
     expect(await res.json()).toMatchObject({ orderNumber: 'PK-12345', total: 58, items: [{ name: 'Taco al Pastor', quantity: 2, price: 25 }] });
   });
 });
+
+describe('quote input', () => {
+  it('does not require phone or address, but still requires the postal code for delivery', () => {
+    const input = parseCheckoutInput({ items: [{ productId: 1, quantity: 2 }], deliveryMethod: 'delivery', postalCode: '01000' }, { forQuote: true });
+    expect(input).toMatchObject({ deliveryMethod: 'delivery', postalCode: '01000', items: [{ productId: 1, quantity: 2 }] });
+
+    expect(() => parseCheckoutInput({ items: [{ productId: 1, quantity: 1 }], deliveryMethod: 'delivery' }, { forQuote: true })).toThrow(/código postal/);
+    expect(() => parseCheckoutInput({ items: [] }, { forQuote: true })).toThrow(CheckoutError);
+  });
+});
+
+describe('POST /api/checkout/quote', () => {
+  const quoteSpy = vi.spyOn(checkout, 'quoteCheckout');
+
+  const quote = async (body: unknown) => {
+    const { POST: quotePOST } = await import('@/app/api/checkout/quote/route');
+    return quotePOST(new NextRequest('http://localhost/api/checkout/quote', { method: 'POST', body: JSON.stringify(body) }));
+  };
+
+  beforeEach(() => {
+    quoteSpy.mockReset();
+    mockGetSession.mockClear();
+    mockCreateCheckoutOrder.mockClear();
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  it('returns the server-side breakdown without needing a session', async () => {
+    quoteSpy.mockResolvedValue({
+      priced: { lines: [{ productId: 1, name: 'Taco al Pastor', quantity: 2, price: 25 }], subtotal: 50, iva: 8, deliveryCost: 0, discount: 0, total: 58 },
+      coupon: null,
+    });
+
+    const res = await quote({ items: [{ productId: 1, quantity: 2, price: 0.01 }], deliveryMethod: 'pickup' });
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      items: [{ productId: 1, name: 'Taco al Pastor', quantity: 2, price: 25 }],
+      subtotal: 50, iva: 8, deliveryCost: 0, discount: 0, total: 58,
+    });
+    expect(mockGetSession).not.toHaveBeenCalled();
+    expect(mockCreateCheckoutOrder).not.toHaveBeenCalled();
+  });
+
+  it('maps pricing errors (e.g. stock) to their status and message', async () => {
+    quoteSpy.mockRejectedValue(new CheckoutError('INSUFFICIENT_STOCK', 'Solo quedan 3 de Taco al Pastor', 409));
+
+    const res = await quote({ items: [{ productId: 1, quantity: 5 }], deliveryMethod: 'pickup' });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({ error: 'Solo quedan 3 de Taco al Pastor', code: 'INSUFFICIENT_STOCK' });
+  });
+
+  it('returns 400 for an empty cart', async () => {
+    const res = await quote({ items: [] });
+
+    expect(res.status).toBe(400);
+    expect(quoteSpy).not.toHaveBeenCalled();
+  });
+});
