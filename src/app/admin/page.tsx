@@ -50,7 +50,7 @@ import {
   EyeOff
 } from "lucide-react";
 import { toast } from "sonner";
-import { notifyOrderStatusChange } from "@/lib/notifications";
+import { notifyOrderStatusChange, sendOrderStatusEmail } from "@/lib/notifications";
 import { optimizeImage } from "@/lib/image-optimizer";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -1872,7 +1872,18 @@ export default function AdminPanel() {
 
       // Send notifications
       if (updatedOrder.customerEmail) {
-        await notifyOrderStatusChange(updatedOrder.orderNumber, newStatus);
+        const [, emailSent] = await Promise.all([
+          notifyOrderStatusChange(updatedOrder.orderNumber, newStatus),
+          sendOrderStatusEmail({
+            email: updatedOrder.customerEmail,
+            orderNumber: updatedOrder.orderNumber,
+            customerName: updatedOrder.customerName || "Cliente",
+            status: newStatus,
+          }),
+        ]);
+        if (!emailSent) {
+          toast.error("No se pudo enviar el email al cliente");
+        }
       }
     } catch (error) {
       console.error("Error updating order status:", error);
