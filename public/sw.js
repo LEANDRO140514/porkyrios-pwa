@@ -1,10 +1,10 @@
-const CACHE_NAME = 'porkyrios-v2';
+// v3 drops the HTML pages that earlier versions cached
+const CACHE_NAME = 'porkyrios-v3';
+// Pages are never cached (they must match the current deploy); only the
+// offline fallback and static assets are. offline.html is self-contained
+// (no JS chunks), so it renders even when nothing else is cached.
 const urlsToCache = [
-  '/',
-  '/menu',
-  '/cart',
-  '/tracking',
-  '/offline',
+  '/offline.html',
   '/manifest.json',
   '/icon-192x192.png',
   '/icon-512x512.png'
@@ -58,7 +58,23 @@ self.addEventListener('fetch', (event) => {
 
   // Never cache API responses: they are per-user (sessions) and must stay fresh
   // (order status, stock, prices)
-  if (new URL(event.request.url).pathname.startsWith('/api/')) {
+  const url = new URL(event.request.url);
+  if (url.pathname.startsWith('/api/')) {
+    return;
+  }
+
+  // HTML pages: always from the network so users get the current deploy;
+  // show the offline page only when there is no connection
+  const accept = event.request.headers.get('accept') || '';
+  if (event.request.mode === 'navigate' || accept.includes('text/html')) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('/offline.html'))
+    );
+    return;
+  }
+
+  // Next.js client navigations fetch page data (RSC payloads): never cache them either
+  if (url.searchParams.has('_rsc') || event.request.headers.get('RSC') === '1') {
     return;
   }
 
@@ -110,7 +126,7 @@ self.addEventListener('fetch', (event) => {
           return response;
         }).catch(() => {
           // If fetch fails, try to return offline page
-          return caches.match('/offline');
+          return caches.match('/offline.html');
         });
       })
   );
