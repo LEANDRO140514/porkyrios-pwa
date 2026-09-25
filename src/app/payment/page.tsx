@@ -17,7 +17,7 @@ import Image from "next/image";
 export default function PaymentPage() {
   const router = useRouter();
   const { data: session, isPending, refetch } = useSession();
-  const { cart, getTotal, getDeliveryCost, deliveryMethod, deliveryAddress, postalCode, validatedPostalCode, clearCart, isLoading: isCartLoading } = useCart();
+  const { cart, getTotal, deliveryMethod, deliveryAddress, postalCode, validatedPostalCode, clearCart, isLoading: isCartLoading } = useCart();
   const [isLoading, setIsLoading] = useState(false);
   
   // Form state
@@ -38,6 +38,61 @@ export default function PaymentPage() {
     value: number;
   } | null>(null);
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+
+  // Totals shown on this page come from the server (same calculation as /api/checkout)
+  const [quote, setQuote] = useState<{
+    items: { productId: number; name: string; quantity: number; price: number }[];
+    subtotal: number;
+    iva: number;
+    deliveryCost: number;
+    discount: number;
+    total: number;
+  } | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [isQuoting, setIsQuoting] = useState(false);
+
+  const cartKey = cart.map(item => `${item.id}:${item.quantity}`).join(",");
+
+  useEffect(() => {
+    if (isCartLoading || cart.length === 0) return;
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setIsQuoting(true);
+      try {
+        const response = await fetch("/api/checkout/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
+          body: JSON.stringify({
+            items: cart.map(item => ({ productId: item.id, quantity: item.quantity })),
+            deliveryMethod,
+            postalCode: deliveryMethod === "delivery" ? postalCode : null,
+            couponCode: appliedCoupon?.code ?? null,
+          }),
+        });
+        const data = await response.json().catch(() => ({}));
+        if (response.ok) {
+          setQuote(data);
+          setQuoteError(null);
+        } else {
+          setQuote(null);
+          setQuoteError(data.error || "No se pudo calcular el total");
+        }
+      } catch (error) {
+        if ((error as Error).name === "AbortError") return;
+        setQuote(null);
+        setQuoteError("No se pudo calcular el total");
+      } finally {
+        if (!controller.signal.aborted) setIsQuoting(false);
+      }
+    }, 250);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [isCartLoading, cartKey, deliveryMethod, postalCode, appliedCoupon?.code]);
 
   // Populate form if user is already logged in
   useEffect(() => {
@@ -99,7 +154,7 @@ export default function PaymentPage() {
     setIsValidatingCoupon(true);
 
     try {
-      const subtotal = getTotal();
+      const subtotal = quote?.subtotal ?? getTotal();
       
       const response = await fetch("/api/coupons/validate", {
         method: "POST",
@@ -367,11 +422,9 @@ export default function PaymentPage() {
     }
   };
 
-  const subtotal = getTotal();
-  const deliveryCost = getDeliveryCost();
-  const iva = subtotal * 0.16;
-  const discount = appliedCoupon?.discount || 0;
-  const total = subtotal + iva + deliveryCost - discount;
+  const money = (value: number | undefined) => (value === undefined ? "…" : `$${value.toFixed(2)}`);
+  const quotedLine = (productId: number) => quote?.items.find(line => line.productId === productId);
+  const discount = quote?.discount ?? 0;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#FF6B35] to-[#FF8E53] py-4 md:py-6 lg:py-8 px-3 md:px-4">
@@ -446,11 +499,11 @@ export default function PaymentPage() {
                     <div>
                       <p className="font-medium">{item.name}</p>
                       <p className="text-xs md:text-sm text-muted-foreground">
-                        ${item.price.toFixed(2)} x {item.quantity}
+                        {money(quotedLine(item.id)?.price)} x {item.quantity}
                       </p>
                     </div>
                     <p className="font-bold">
-                      ${(item.price * item.quantity).toFixed(2)}
+                      {money(quotedLine(item.id) ? quotedLine(item.id)!.price * item.quantity : undefined)}
                     </p>
                   </div>
                 ))}
@@ -518,17 +571,17 @@ export default function PaymentPage() {
               <div className="space-y-1.5 md:space-y-2 pt-3 md:pt-4 border-t">
                 <div className="flex justify-between text-xs md:text-sm">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span>${subtotal.toFixed(2)}</span>
+                  <span>{money(quote?.subtotal)}</span>
                 </div>
-                {deliveryCost > 0 && (
+                {(quote?.deliveryCost ?? 0) > 0 && (
                   <div className="flex justify-between text-xs md:text-sm">
                     <span className="text-muted-foreground">Envío 🏍️</span>
-                    <span>${deliveryCost.toFixed(2)}</span>
+                    <span>{money(quote?.deliveryCost)}</span>
                   </div>
                 )}
                 <div className="flex justify-between text-xs md:text-sm">
                   <span className="text-muted-foreground">IVA (16%)</span>
-                  <span>${iva.toFixed(2)}</span>
+                  <span>{money(quote?.iva)}</span>
                 </div>
                 {discount > 0 && (
                   <div className="flex justify-between text-xs md:text-sm text-green-600 dark:text-green-400">
@@ -538,8 +591,13 @@ export default function PaymentPage() {
                 )}
                 <div className="flex justify-between text-base md:text-lg font-bold pt-2 border-t">
                   <span>Total</span>
-                  <span className="text-primary">${total.toFixed(2)}</span>
+                  <span className="text-primary">{money(quote?.total)}</span>
                 </div>
+                {quoteError && (
+                  <p role="alert" className="text-xs md:text-sm text-center text-red-600 font-medium">
+                    ⚠️ {quoteError}
+                  </p>
+                )}
                 {discount > 0 && (
                   <p className="text-[10px] md:text-xs text-center text-green-600 dark:text-green-400">
                     ¡Ahorraste ${discount.toFixed(2)}! 🎉
@@ -686,7 +744,7 @@ export default function PaymentPage() {
                   <Button
                     type="submit"
                     className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold h-11 md:h-12 text-sm md:text-base"
-                    disabled={isLoading}
+                    disabled={isLoading || !quote || isQuoting}
                     size="lg"
                   >
                     {isLoading ? (
@@ -694,10 +752,20 @@ export default function PaymentPage() {
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Procesando...
                       </>
-                    ) : (
+                    ) : quote && !isQuoting ? (
                       <>
                         <CreditCard className="mr-2 h-4 w-4 md:h-5 md:w-5" />
-                        Pagar ${total.toFixed(2)} con MercadoPago
+                        Pagar ${quote.total.toFixed(2)} con MercadoPago
+                      </>
+                    ) : quoteError && !isQuoting ? (
+                      <>
+                        <CreditCard className="mr-2 h-4 w-4 md:h-5 md:w-5" />
+                        Revisa tu pedido
+                      </>
+                    ) : (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Calculando total...
                       </>
                     )}
                   </Button>
