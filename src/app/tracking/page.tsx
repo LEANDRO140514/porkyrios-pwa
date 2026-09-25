@@ -182,7 +182,6 @@ export default function TrackingPage() {
     } else if (mpStatus === "rejected" || mpStatus === "failure") {
       toast.error("El pago fue rechazado. Intenta con otro método de pago.");
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Auto-search when returning from checkout/MercadoPago: the payment page
